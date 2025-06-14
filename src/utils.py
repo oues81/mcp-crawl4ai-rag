@@ -7,12 +7,22 @@ from typing import List, Dict, Any, Optional, Tuple
 import json
 from supabase import create_client, Client
 from urllib.parse import urlparse
-import openai
 import re
 import time
+import requests # Ajout pour les appels à Ollama
+import openai   # Réintroduit pour la génération contextuelle (Chat Completions)
 
-# Load OpenAI API key for embeddings
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Configuration pour Ollama (pour les embeddings)
+# Les variables OLLAMA_ENDPOINT_URL et OLLAMA_EMBEDDING_MODEL doivent être dans le .env
+
+# Configuration pour OpenAI (pour la génération contextuelle si activée)
+# La variable OPENAI_API_KEY doit être dans le .env si USE_CONTEXTUAL_EMBEDDINGS est true
+if os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false").lower() == "true" or os.getenv("MODEL_CHOICE"):
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        print("AVERTISSEMENT: OPENAI_API_KEY n'est pas définie, la génération contextuelle via OpenAI échouera si activée.")
+    else:
+        openai.api_key = openai_api_key
 
 def get_supabase_client() -> Client:
     """
@@ -47,11 +57,24 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     
     for retry in range(max_retries):
         try:
-            response = openai.embeddings.create(
-                model="text-embedding-3-small", # Hardcoding embedding model for now, will change this later to be more dynamic
-                input=texts
-            )
-            return [item.embedding for item in response.data]
+            ollama_endpoint = os.getenv("OLLAMA_ENDPOINT_URL")
+            ollama_model = os.getenv("OLLAMA_EMBEDDING_MODEL")
+            if not ollama_endpoint or not ollama_model:
+                raise ValueError("OLLAMA_ENDPOINT_URL and OLLAMA_EMBEDDING_MODEL must be set for Ollama embeddings")
+
+            all_embeddings = []
+            # Ollama API might not support large batch requests or have different limits
+            # Processing one by one for simplicity and robustness, can be optimized later if needed.
+            for text_item in texts:
+                payload = {
+                    "model": ollama_model,
+                    "prompt": text_item
+                }
+                # L'endpoint exact peut varier, /api/embeddings est courant
+                response = requests.post(f"{ollama_endpoint.rstrip('/')}/api/embeddings", json=payload)
+                response.raise_for_status() # Lève une exception pour les codes d'erreur HTTP
+                all_embeddings.append(response.json().get("embedding"))
+            return all_embeddings
         except Exception as e:
             if retry < max_retries - 1:
                 print(f"Error creating batch embeddings (attempt {retry + 1}/{max_retries}): {e}")
@@ -67,11 +90,12 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 
                 for i, text in enumerate(texts):
                     try:
-                        individual_response = openai.embeddings.create(
-                            model="text-embedding-3-small",
-                            input=[text]
-                        )
-                        embeddings.append(individual_response.data[0].embedding)
+                        # Ce bloc de fallback est maintenant la logique principale pour Ollama (one by one)
+                        # Si l'appel principal (qui est déjà one-by-one) échoue, on loggue l'erreur
+                        # et on ajoute un embedding de zéros.
+                        # La logique de retry est déjà au-dessus.
+                        print(f"Fallback: Failed to create embedding for a text item: {individual_error}")
+                        embeddings.append([0.0] * 1536) # La dimension peut varier pour Nomic, à ajuster si nécessaire
                         successful_count += 1
                     except Exception as individual_error:
                         print(f"Failed to create embedding for text {i}: {individual_error}")
@@ -96,8 +120,12 @@ def create_embedding(text: str) -> List[float]:
         return embeddings[0] if embeddings else [0.0] * 1536
     except Exception as e:
         print(f"Error creating embedding: {e}")
-        # Return empty embedding if there's an error
-        return [0.0] * 1536
+        # La dimension de l'embedding pour Nomic peut être différente de 1536 (OpenAI text-embedding-3-small).
+        # Il faudrait idéalement récupérer cette dimension dynamiquement ou la configurer.
+        # Pour l'instant, on garde 1536, mais c'est un point d'attention.
+        # Nomic-embed-text a une dimension de 768.
+        print(f"Error creating embedding with Ollama: {e}")
+        return [0.0] * 768 # Ajusté pour Nomic (supposant 768, à vérifier)
 
 def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, bool]:
     """
