@@ -63,17 +63,27 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 raise ValueError("OLLAMA_ENDPOINT_URL and OLLAMA_EMBEDDING_MODEL must be set for Ollama embeddings")
 
             all_embeddings = []
+            print(f"[Ollama Debug] Attempting to generate embeddings for {len(texts)} text items one by one.")
             # Ollama API might not support large batch requests or have different limits
             # Processing one by one for simplicity and robustness, can be optimized later if needed.
-            for text_item in texts:
+            for idx, text_item in enumerate(texts):
                 payload = {
                     "model": ollama_model,
                     "prompt": text_item
                 }
                 # L'endpoint exact peut varier, /api/embeddings est courant
-                response = requests.post(f"{ollama_endpoint.rstrip('/')}/api/embeddings", json=payload)
+                url_to_call = f"{ollama_endpoint.rstrip('/')}/api/embeddings"
+                print(f"[Ollama Debug] Calling: {url_to_call} for item {idx+1}/{len(texts)}")
+                response = requests.post(url_to_call, json=payload, timeout=30) # Ajout d'un timeout
+                print(f"[Ollama Debug] Response status: {response.status_code} for item {idx+1}")
                 response.raise_for_status() # Lève une exception pour les codes d'erreur HTTP
-                all_embeddings.append(response.json().get("embedding"))
+                response_data = response.json()
+                print(f"[Ollama Debug] Response JSON: {response_data} for item {idx+1}")
+                embedding = response_data.get("embedding")
+                if embedding is None:
+                    print(f"[Ollama Error] 'embedding' key not found in response for item {idx+1}. Response: {response_data}")
+                    raise ValueError(f"Ollama response missing 'embedding' key for item {idx+1}")
+                all_embeddings.append(embedding)
             return all_embeddings
         except Exception as e:
             if retry < max_retries - 1:
@@ -94,13 +104,14 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                         # Si l'appel principal (qui est déjà one-by-one) échoue, on loggue l'erreur
                         # et on ajoute un embedding de zéros.
                         # La logique de retry est déjà au-dessus.
-                        print(f"Fallback: Failed to create embedding for a text item: {individual_error}")
-                        embeddings.append([0.0] * 1536) # La dimension peut varier pour Nomic, à ajuster si nécessaire
-                        successful_count += 1
-                    except Exception as individual_error:
-                        print(f"Failed to create embedding for text {i}: {individual_error}")
+                        # La variable 'individual_error' n'est pas définie ici, l'erreur générale 'e' du bloc try/except externe est plus pertinente.
+                        print(f"Fallback: Failed to create embedding for text item {i} after all retries. General error: {e}")
+                        embeddings.append([0.0] * 768) # Ajusté pour Nomic (768)
+                        # successful_count n'est pas incrémenté ici car c'est un échec
+                    except Exception as specific_individual_error: # Renommer pour éviter confusion
+                        print(f"Fallback: Error processing text item {i} individually: {specific_individual_error}")
                         # Add zero embedding as fallback
-                        embeddings.append([0.0] * 1536)
+                        embeddings.append([0.0] * 768) # Ajusté pour Nomic (768)
                 
                 print(f"Successfully created {successful_count}/{len(texts)} embeddings individually")
                 return embeddings
@@ -199,6 +210,7 @@ def add_documents_to_supabase(
     contents: List[str], 
     metadatas: List[Dict[str, Any]],
     url_to_full_document: Dict[str, str],
+    collection_id: str, # Ajout du paramètre collection_id
     batch_size: int = 20
 ) -> None:
     """
@@ -297,6 +309,11 @@ def add_documents_to_supabase(
             source_id = parsed_url.netloc or parsed_url.path
             
             # Prepare data for insertion
+            # S'assurer que collection_id est dans les métadonnées du chunk
+            current_metadata = batch_metadatas[j]
+            if 'collection_id' not in current_metadata:
+                current_metadata['collection_id'] = collection_id
+
             data = {
                 "url": batch_urls[j],
                 "chunk_number": batch_chunk_numbers[j],
@@ -579,12 +596,15 @@ def add_code_examples_to_supabase(
             parsed_url = urlparse(urls[idx])
             source_id = parsed_url.netloc or parsed_url.path
             
+            current_metadata = metadatas[idx].copy()
+            current_metadata['collection_id'] = collection_id
+            
             batch_data.append({
                 'url': urls[idx],
                 'chunk_number': chunk_numbers[idx],
                 'content': code_examples[idx],
                 'summary': summaries[idx],
-                'metadata': metadatas[idx],  # Store as JSON object, not string
+                'metadata': current_metadata,  # Store as JSON object, not string
                 'source_id': source_id,
                 'embedding': embedding
             })

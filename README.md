@@ -220,7 +220,7 @@ docker run --env-file .env -p 8051:8051 mcp/crawl4ai-rag
 ### Using Python
 
 ```bash
-uv run src/crawl4ai_mcp.py
+uv run /app/mcp-crawl4ai-rag/src/crawl4ai_mcp.py
 ```
 
 The server will start and listen on the configured host and port.
@@ -236,6 +236,7 @@ Once you have the server running with SSE transport, you can connect to it using
   "mcpServers": {
     "crawl4ai-rag": {
       "transport": "sse",
+      "cwd": "${workspaceFolder}/mcp-crawl4ai-rag/src",
       "url": "http://localhost:8051/sse"
     }
   }

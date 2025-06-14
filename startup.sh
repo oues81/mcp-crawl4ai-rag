@@ -20,4 +20,5 @@ fi
 
 # Démarrer l'application
 echo "Starting MCP Crawl4AI server with Supabase..."
+cd /app/mcp-crawl4ai-rag
 exec python src/crawl4ai_mcp.py
