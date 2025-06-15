@@ -1,28 +1,79 @@
 version: '3.8'
 
+# Variables d'environnement communes
+x-env: &default-env
+  TRANSPORT: sse
+  HOST: 0.0.0.0
+  PORT: 8051
+  
+  # Clés API (requises)
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?"OPENAI_API_KEY doit être défini"}
+  SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}
+  SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?"SUPABASE_SERVICE_KEY doit être défini"}
+  
+  # Configuration du modèle
+  MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+  OLAMA_BASE_URL: ${OLAMA_BASE_URL:-http://host.docker.internal:11434}
+  
+  # Fonctionnalités optionnelles
+  USE_CONTEXTUAL_EMBEDDINGS: ${USE_CONTEXTUAL_EMBEDDINGS:-false}
+  USE_HYBRID_SEARCH: ${USE_HYBRID_SEARCH:-false}
+  USE_AGENTIC_RAG: ${USE_AGENTIC_RAG:-false}
+  USE_RERANKING: ${USE_RERANKING:-false}
+  
+  # Optimisations
+  PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
+  PIP_NO_CACHE_DIR: 0
+
 services:
   mcp-crawl4ai:
     build:
       context: .
+      target: app  # Cible spécifique dans le Dockerfile
       args:
-        PORT: 8051
+        - BUILDKIT_INLINE_CACHE=1
+        - PORT=8051
+    
     ports:
       - "8051:8051"
+    
     environment:
-      - TRANSPORT=sse
-      - HOST=0.0.0.0
-      - PORT=8051
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
-      - MODEL_CHOICE=${MODEL_CHOICE:-gpt-4}
-      - USE_CONTEXTUAL_EMBEDDINGS=${USE_CONTEXTUAL_EMBEDDINGS:-false}
-      - USE_HYBRID_SEARCH=${USE_HYBRID_SEARCH:-false}
-      - USE_AGENTIC_RAG=${USE_AGENTIC_RAG:-false}
-      - USE_RERANKING=${USE_RERANKING:-false}
-      - OLAMA_BASE_URL=${OLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      <<: *default-env
+      # Configuration spécifique au service
+      CACHE_DIR: /app/.cache
+      HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
+      TORCH_HOME: /app/.cache/torch
+    
+    # Volumes pour la persistance des données
+    volumes:
+      - model_cache:/app/.cache
+      - ./logs:/app/logs
+    
+    # Configuration du déploiement
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Redémarrage automatique
     restart: unless-stopped
+    
+    # Configuration de la santé
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8051/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
+# Définition des volumes
 volumes:
+  model_cache:
+    driver: local
   postgres_data:
+    driver: local
