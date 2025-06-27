@@ -1,101 +1,63 @@
-# syntax=docker/dockerfile:1.4
+# Étape 1: Builder pour les dépendances de compilation
+FROM python:3.12-slim-bookworm as builder
 
-# Étape 1: Image de base avec CUDA
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 as base
+# Installer uniquement les dépendances de compilation nécessaires
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Variables d'environnement communes
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
+# Créer et activer un environnement virtuel
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Installer les dépendances de manière optimisée
+WORKDIR /app
+COPY docker/services/mcp-crawl4ai-rag/requirements-minimal.txt .
+
+# Installer les dépendances en une seule couche pour réduire la taille
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --no-warn-script-location \
+    --no-deps \
+    -r requirements-minimal.txt
+
+# Étape 2: Image finale minimale
+FROM python:3.12-slim-bookworm
+
+# Variables d'environnement minimales
+ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH="/root/.local/bin:$PATH" \
-    PIP_CACHE_DIR=/root/.cache/pip \
-    PIP_NO_CACHE_DIR=0 \
-    HF_HOME=/root/.cache/huggingface \
-    TORCH_HOME=/root/.cache/torch \
-    FLASH_ATTENTION_SKIP_CUDA_BUILD=1
+    CRAWL4_AI_BASE_DIRECTORY=/app/data \
+    PYTHONPATH="/app/src"  # Mise à jour du PYTHONPATH
 
-# Installation des dépendances système
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    curl \
-    git \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    python3-pip \
-    python3.10 \
-    python3.10-venv \
-    python3.10-dev \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
-
-# Configuration de Python
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip && \
-    pip install --upgrade pip setuptools wheel
-
-# Création des dossiers de cache
-RUN mkdir -p /root/.cache/huggingface /root/.cache/torch /root/.cache/pip && \
-    chmod -R 777 /root/.cache
-
-# Étape 2: Builder l'application
-FROM base as builder
-
-WORKDIR /app
-
-# Copier les fichiers de dépendances d'abord pour optimiser le cache
-COPY requirements.txt .
-
-# Installer d'abord les dépendances lourdes avec cache optimisé
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.cache/torch \
-    --mount=type=cache,target=/root/.cache/huggingface \
-    pip install --no-cache-dir torch==2.1.2+cu121 torchvision==0.16.2+cu121 torchaudio==2.1.2+cu121 --index-url https://download.pytorch.org/whl/cu121 && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copier le reste de l'application
-COPY . .
-
-# Étape 3: Image finale (app)
-FROM base as app
-
-# Variables d'environnement
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH="/app" \
-    PATH="/app/bin:$PATH" \
-    HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface/hub" \
-    TORCH_HOME="/root/.cache/torch" \
-    CUDA_VISIBLE_DEVICES="all"
-
-# Installation des dépendances système minimales
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
+# Installer uniquement les dépendances système essentielles
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Copier uniquement l'environnement virtuel nécessaire
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Configurer l'utilisateur non-root
+RUN useradd -m appuser && \
+    mkdir -p /app/data /app/logs && \
+    chown -R appuser:appuser /app && \
+    chmod -R 777 /app/data /app/logs
 
 # Copier uniquement les fichiers nécessaires
-COPY --from=builder /usr/local /usr/local
-COPY --from=builder /app /app
+COPY --chown=appuser:appuser docker/services/mcp-crawl4ai-rag/src/ /app/src/
 
-# Créer les dossiers de cache nécessaires
-RUN mkdir -p /root/.cache/huggingface/hub /root/.cache/torch /root/.cache/pip \
-    && chmod -R 777 /root/.cache
+# Vérifier que le fichier crawl4ai_mcp.py est présent
+RUN ls -la /app/src/crawl4ai_mcp.py
 
-# Rendre les scripts exécutables
-RUN find /app -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+# Utiliser l'utilisateur non-root
+USER appuser
+WORKDIR /app
 
-# Exposer le port de l'application
-EXPOSE 8051
-
-# Commande par défaut
-CMD ["./startup.sh"]
+# Exposer le port et démarrer
+EXPOSE 8002
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
