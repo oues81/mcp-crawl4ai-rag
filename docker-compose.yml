@@ -2,9 +2,10 @@ version: '3.8'
 
 # Variables d'environnement communes
 x-env: &default-env
+  # Configuration du serveur
   TRANSPORT: sse
   HOST: 0.0.0.0
-  PORT: 8051
+  PORT: 8002
   
   # Clés API (requises)
   OPENAI_API_KEY: ${OPENAI_API_KEY:?"OPENAI_API_KEY doit être défini"}
@@ -13,35 +14,38 @@ x-env: &default-env
   
   # Configuration du modèle
   MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
-  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
-  OLAMA_BASE_URL: ${OLAMA_BASE_URL:-http://host.docker.internal:11434}
   
   # Fonctionnalités optionnelles
   USE_CONTEXTUAL_EMBEDDINGS: ${USE_CONTEXTUAL_EMBEDDINGS:-false}
   USE_HYBRID_SEARCH: ${USE_HYBRID_SEARCH:-false}
   USE_AGENTIC_RAG: ${USE_AGENTIC_RAG:-false}
   USE_RERANKING: ${USE_RERANKING:-false}
+  USE_KNOWLEDGE_GRAPH: ${USE_KNOWLEDGE_GRAPH:-false}
+  
+  # Configuration Neo4j (si USE_KNOWLEDGE_GRAPH=true)
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:?"NEO4J_PASSWORD doit être défini si USE_KNOWLEDGE_GRAPH=true"}
   
   # Optimisations
   PYTHONUNBUFFERED: 1
   PYTHONDONTWRITEBYTECODE: 1
-  PIP_NO_CACHE_DIR: 0
+  PYTHONFAULTHANDLER: 1
+  CRAWL4_AI_BASE_DIRECTORY: /app/data
 
 services:
-  mcp-crawl4ai:
+  mcp-crawl4ai-rag:
     build:
       context: .
-      target: app  # Cible spécifique dans le Dockerfile
-      args:
-        - BUILDKIT_INLINE_CACHE=1
-        - PORT=8051
+      dockerfile: Dockerfile
     
     ports:
-      - "8051:8051"
+      - "8002:8002"
     
     environment:
       <<: *default-env
-      # Configuration spécifique au service
+      
+      # Configuration des répertoires de cache
       CACHE_DIR: /app/.cache
       HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
       TORCH_HOME: /app/.cache/torch

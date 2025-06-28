@@ -1,63 +1,56 @@
-# Étape 1: Builder pour les dépendances de compilation
-FROM python:3.12-slim-bookworm as builder
+# Stage 1: Builder - Install dependencies with Poetry
+FROM python:3.12-slim AS builder
 
-# Installer uniquement les dépendances de compilation nécessaires
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_VIRTUALENVS_CREATE=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
 
-# Créer et activer un environnement virtuel
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends curl
 
-# Installer les dépendances de manière optimisée
+# Install poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
-COPY docker/services/mcp-crawl4ai-rag/requirements-minimal.txt .
 
-# Installer les dépendances en une seule couche pour réduire la taille
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --no-warn-script-location \
-    --no-deps \
-    -r requirements-minimal.txt
+# Copy dependency files from the context root
+COPY pyproject.toml poetry.lock* ./
 
-# Étape 2: Image finale minimale
-FROM python:3.12-slim-bookworm
+# Install dependencies
+RUN poetry lock
+RUN poetry install --without dev --no-root
 
-# Variables d'environnement minimales
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONIOENCODING=UTF-8 \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    CRAWL4_AI_BASE_DIRECTORY=/app/data \
-    PYTHONPATH="/app/src"  # Mise à jour du PYTHONPATH
+# Install PyTorch for CPU separately to avoid dependency resolution issues
+RUN . /app/.venv/bin/activate && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-# Installer uniquement les dépendances système essentielles
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Stage 2: Final image
+FROM python:3.12-slim AS final
 
-# Copier uniquement l'environnement virtuel nécessaire
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Create a non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# Configurer l'utilisateur non-root
-RUN useradd -m appuser && \
-    mkdir -p /app/data /app/logs && \
-    chown -R appuser:appuser /app && \
-    chmod -R 777 /app/data /app/logs
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV PATH="/app/.venv/bin:$PATH"
+WORKDIR /app
 
-# Copier uniquement les fichiers nécessaires
-COPY --chown=appuser:appuser docker/services/mcp-crawl4ai-rag/src/ /app/src/
+# Copy virtual env from builder stage
+COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 
-# Vérifier que le fichier crawl4ai_mcp.py est présent
-RUN ls -la /app/src/crawl4ai_mcp.py
+# Copy the application source code from the context's src directory
+COPY --chown=appuser:appgroup src/ /app/src/
 
-# Utiliser l'utilisateur non-root
+# Switch to non-root user
 USER appuser
-WORKDIR /app
 
-# Exposer le port et démarrer
+# Expose the port the app runs on
 EXPOSE 8002
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+
+# Define the command to run the application
+CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]

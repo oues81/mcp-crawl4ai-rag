@@ -5,7 +5,7 @@ This server provides tools to crawl websites using Crawl4AI, automatically detec
 the appropriate crawl method based on URL type (sitemap, txt file, or regular webpage).
 Also includes AI hallucination detection and repository parsing tools using Neo4j knowledge graphs.
 """
-from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context
 from sentence_transformers import CrossEncoder
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -43,10 +43,8 @@ from utils import (
 )
 
 # Import knowledge graph modules
-from knowledge_graph_validator import KnowledgeGraphValidator
-from parse_repo_into_neo4j import DirectNeo4jExtractor
-from ai_script_analyzer import AIScriptAnalyzer
-from hallucination_reporter import HallucinationReporter
+from .knowledge_graphs import KnowledgeGraphValidator, AIScriptAnalyzer, HallucinationReporter
+from .knowledge_graphs.parse_repo_into_neo4j import DirectNeo4jExtractor
 
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent

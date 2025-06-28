@@ -1,12 +1,12 @@
 <h1 align="center">Crawl4AI RAG MCP Server</h1>
 
 <p align="center">
-  <em>Web Crawling and RAG Capabilities for AI Agents and AI Coding Assistants</em>
+  <em>Serveur MCP pour le crawling web et le RAG optimisé pour CPU</em>
 </p>
 
-A powerful implementation of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) integrated with [Crawl4AI](https://crawl4ai.com) and [Supabase](https://supabase.com/) for providing AI agents and AI coding assistants with advanced web crawling and RAG capabilities.
+Une implémentation optimisée du [Model Context Protocol (MCP)](https://modelcontextprotocol.io) intégrant [Crawl4AI](https://crawl4ai.com) et [Supabase](https://supabase.com/) pour fournir des capacités avancées de crawling web et de RAG (Retrieval-Augmented Generation) fonctionnant sur CPU.
 
-With this MCP server, you can <b>scrape anything</b> and then <b>use that knowledge anywhere</b> for RAG.
+Avec ce serveur MCP, vous pouvez <b>extraire du contenu web</b> et <b>utiliser ces connaissances</b> pour alimenter des applications RAG.
 
 The primary goal is to bring this MCP server into [Archon](https://github.com/coleam00/Archon) as I evolve it to be more of a knowledge engine for AI coding assistants to build AI agents. This first version of the Crawl4AI/RAG MCP server will be improved upon greatly soon, especially making it more configurable so you can use different embedding models and run everything locally with Ollama.
 

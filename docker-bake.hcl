@@ -1,5 +1,5 @@
 # docker-bake.hcl
-# Configuration pour la construction des images avec Docker Buildx
+# Configuration optimisée pour la construction avec Docker Buildx
 
 # Variables globales
 variable "TAG" {
@@ -12,32 +12,14 @@ target "common" {
   args = {
     BUILDKIT_INLINE_CACHE = "1"
   }
-  # Utilisation du cache local
-  cache-to = ["type=local,dest=/tmp/docker-cache-new,mode=max"]
-  cache-from = ["type=local,src=/tmp/docker-cache"]
-}
-
-# Cible pour l'image de base avec CUDA
-target "base" {
-  inherits = ["common"]
-  context = "."
-  dockerfile = "Dockerfile"
-  target = "base"
-  tags = ["sti-mcp-crawl4ai-base:${TAG}"]
-  # Forcer la reconstruction si nécessaire
-  no-cache-filter = ["base"]
-}
-
-# Cible pour l'image de builder
-target "builder" {
-  inherits = ["common"]
-  context = "."
-  dockerfile = "Dockerfile"
-  target = "builder"
-  tags = ["sti-mcp-crawl4ai-builder:${TAG}"]
-  # Dépend de la base
-  contexts = {
-    base = "target:base"
+  # Optimisation du cache
+  cache-from = ["type=registry,ref=registry-1.docker.io/yournamespace/mcp-crawl4ai:cache"]
+  cache-to = ["type=inline"]
+  # Optimisation des couches
+  output = ["type=docker"]
+  # Compression
+  attrs = {
+    "build-arg:BUILDKIT_INLINE_CACHE" = "1"
   }
 }
 
@@ -47,7 +29,21 @@ target "app" {
   context = "."
   dockerfile = "Dockerfile"
   target = "app"
-  tags = ["sti-mcp-crawl4ai:${TAG}"]
+  tags = ["mcp-crawl4ai:${TAG}"]
+  
+  # Paramètres spécifiques
+  args = {
+    PYTHONUNBUFFERED = "1"
+    PYTHONDONTWRITEBYTECODE = "1"
+    PYTHONFAULTHANDLER = "1"
+  }
+  
+  # Labels pour l'image
+  labels = {
+    "org.opencontainers.image.title" = "MCP Crawl4AI RAG"
+    "org.opencontainers.image.description" = "Service MCP pour le crawling et RAG"
+    "org.opencontainers.image.version" = "${TAG}"
+  }
   # Dépend du builder
   contexts = {
     base = "target:base",

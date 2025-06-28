@@ -1,1 +1,1 @@
-# This file makes src a Python package
+"""Package principal du service MCP Crawl4AI RAG."""
