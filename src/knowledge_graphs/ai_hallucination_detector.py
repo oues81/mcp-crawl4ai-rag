@@ -15,8 +15,8 @@ from typing import Optional, List
 
 from dotenv import load_dotenv
 
-from ai_script_analyzer import AIScriptAnalyzer, analyze_ai_script
-from knowledge_graph_validator import KnowledgeGraphValidator
+from .ai_script_analyzer import AIScriptAnalyzer, analyze_ai_script
+from .knowledge_graph_validator import KnowledgeGraphValidator
 from hallucination_reporter import HallucinationReporter
 
 # Configure logging

@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:1.4
+
+# Étape 1: Builder pour l'installation des dépendances
+FROM python:3.12-slim as builder
+
+# Définition des variables d'environnement
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH="/app" \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100
+
+# Installation des dépendances système
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Installation de Poetry
+ENV POETRY_VERSION=1.8.2
+RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+
+# Configuration du répertoire de travail
+WORKDIR /app
+
+# Copie des fichiers de dépendances
+COPY pyproject.toml poetry.lock* ./
+
+# Installation des dépendances avec Poetry
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/pypoetry \
+    poetry config virtualenvs.create true && \
+    poetry config virtualenvs.in-project true && \
+    poetry install --no-interaction --no-ansi --no-root && \
+    poetry install --no-interaction --no-ansi --only main
+
+# Installation des dépendances spécifiques
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir sentence-transformers
+
+# Étape 2: Image d'exécution finale
+FROM python:3.12-slim
+
+# Définition des variables d'environnement
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH="/app" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PORT=8010 \
+    PATH="/app/.venv/bin:$PATH" \
+    # Optimisation des performances CPU
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false
+
+# Installation des dépendances système minimales
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libpq5 \
+    libmagic1 \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-fra \
+    && rm -rf /var/lib/apt/lists/*
+
+# Création de l'utilisateur non-root
+RUN addgroup --system appgroup && \
+    adduser --system --no-create-home --ingroup appgroup appuser && \
+    mkdir -p /app && \
+    chown -R appuser:appgroup /app
+
+# Configuration du répertoire de travail
+WORKDIR /app
+
+# Copie de l'environnement virtuel depuis le builder
+COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
+
+# Copie du code source
+COPY --chown=appuser:appgroup src/ /app/src/
+
+# Création des répertoires nécessaires
+RUN mkdir -p /app/data /app/logs /app/cache && \
+    chown -R appuser:appgroup /app/data /app/logs /app/cache
+
+# Configuration des permissions
+RUN chown -R appuser:appgroup /app
+
+# Passe à l'utilisateur non-root
+USER appuser
+
+# Configuration du service
+EXPOSE ${PORT}
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:$\{PORT\}/health || exit 1
+
+# Script de démarrage
+COPY --chown=appuser:appgroup startup.sh /app/startup.sh
+RUN chmod +x /app/startup.sh
+
+# Commande de démarrage
+CMD ["/app/startup.sh"]

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from knowledge_graph_validator import (
+from knowledge_graphs.knowledge_graph_validator import (
     ScriptValidationResult, ValidationStatus, ValidationResult
 )
 

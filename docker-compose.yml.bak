@@ -1,10 +1,5 @@
 version: '3.8'
 
-# Configuration réseau
-networks:
-  mcp-network:
-    driver: bridge
-
 # Variables d'environnement communes
 x-env: &default-env
   # Configuration du serveur
@@ -39,7 +34,6 @@ x-env: &default-env
   CRAWL4_AI_BASE_DIRECTORY: /app/data
 
 services:
-  # Service principal MCP Crawl4AI RAG
   mcp-crawl4ai-rag:
     build:
       context: .
@@ -47,15 +41,14 @@ services:
       target: production
     
     ports:
-      - "${API_PORT:-8002}:8002"
+      - "8002:8002"
     
     # Volumes pour la persistance et le cache
     volumes:
-      - pip-cache:/root/.cache/pip
-      - model-cache:/root/.cache
-      - crawl4ai-data:/app/data
-      - ./logs:/app/logs
-      - ./src:/app/src:ro
+      - pip-cache:/root/.cache/pip  # Cache pour pip
+      - model_cache:/root/.cache  # Cache pour les modèles et autres caches
+      - crawl4ai-data:/app/data  # Données persistantes de l'application
+      - ./logs:/app/logs  # Logs de l'application
     
     # Configuration du déploiement
     deploy:
@@ -67,16 +60,8 @@ services:
     # Redémarrage automatique sauf arrêt manuel
     restart: unless-stopped
     
-    # Configuration réseau
-    networks:
-      - mcp-network
-    
     environment:
       <<: *default-env
-      
-      # Chemins de l'application
-      APP_DATA_DIR: /app/data
-      LOG_DIR: /app/logs
       
       # Configuration des répertoires de cache
       CACHE_DIR: /app/.cache
@@ -90,18 +75,20 @@ services:
       HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
       TORCH_HOME: /app/.cache/torch
       
-      # Configuration Python
+      # Configuration de l'application
       PYTHONUNBUFFERED: 1
       PYTHONDONTWRITEBYTECODE: 1
       PYTHONPATH: /app
-      PYTHONFAULTHANDLER: 1
+      
+      # Configuration de crawl4ai
+      CRAWL4_AI_BASE_DIRECTORY: /app/data
       
       # Configuration du logging
       LOG_LEVEL: INFO
       
       # Configuration du service
-      HOST: ${API_HOST:-0.0.0.0}
-      PORT: ${API_PORT:-8002}
+      HOST: 0.0.0.0
+      PORT: 8002
     
     # Configuration de la santé
     healthcheck:
@@ -114,47 +101,14 @@ services:
     # Commande de démarrage personnalisée
     command: ["/app/startup.sh"]
 
-# Services supplémentaires
-  # Service API Gateway
-  api-gateway:
-    image: nginx:alpine
-    ports:
-      - "8081:80"
-    volumes:
-      - ./config/nginx/conf.d:/etc/nginx/conf.d
-      - ./logs/nginx:/var/log/nginx
-    depends_on:
-      - mcp-crawl4ai-rag
-    networks:
-      - mcp-network
-    restart: unless-stopped
-
-  # Service RAG (si nécessaire)
-  rag-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-    environment:
-      <<: *default-env
-      SERVICE_TYPE: rag
-    volumes:
-      - ./src:/app/src:ro
-      - crawl4ai-data:/app/data
-    networks:
-      - mcp-network
-    restart: unless-stopped
-    depends_on:
-      - mcp-crawl4ai-rag
-
 # Définition des volumes persistants
 volumes:
   pip-cache:
-    name: mcp-crawl4ai-pip-cache
+    name: mcp-crawl4ai-pip-cache  # Nom explicite pour le volume
     driver: local
-  model-cache:
-    name: mcp-crawl4ai-model-cache
+  model_cache:
+    name: mcp-crawl4ai-model-cache  # Nom explicite pour le volume
     driver: local
   crawl4ai-data:
-    name: mcp-crawl4ai-data
+    name: mcp-crawl4ai-data  # Nom explicite pour le volume
     driver: local

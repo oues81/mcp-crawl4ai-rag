@@ -784,3 +784,103 @@ def search_code_examples(
     except Exception as e:
         print(f"Error searching code examples: {e}")
         return []
+
+
+def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
+    """
+    Split text into chunks, respecting code blocks and paragraphs.
+    
+    Args:
+        text: The text to split into chunks
+        chunk_size: The maximum size of each chunk in characters
+        
+    Returns:
+        List of text chunks
+    """
+    chunks = []
+    start = 0
+    text_length = len(text)
+    
+    # If the text is already smaller than chunk_size, return it as is
+    if text_length <= chunk_size:
+        return [text]
+    
+    while start < text_length:
+        # Calculate end position
+        end = start + chunk_size
+        
+        # If we're at the end of the text, just take what's left
+        if end >= text_length:
+            chunks.append(text[start:].strip())
+            break
+            
+        # Try to find a good breaking point (end of paragraph or code block)
+        # Look for the last newline in the chunk
+        newline_pos = text.rfind('\n', start, end)
+        
+        # If we found a newline, use it as the breaking point
+        if newline_pos > start:
+            chunks.append(text[start:newline_pos].strip())
+            start = newline_pos + 1
+        else:
+            # If no newline found, just split at chunk_size
+            chunks.append(text[start:end].strip())
+            start = end
+    
+    return chunks
+
+
+def extract_section_info(chunk: str) -> Dict[str, Any]:
+    """
+    Extracts headers and stats from a chunk.
+    
+    Args:
+        chunk: Markdown chunk
+        
+    Returns:
+        Dictionary with headers and stats
+    """
+    import re
+    from typing import Dict, Any
+    
+    headers = re.findall(r'^(#+)\s+(.+)$', chunk, re.MULTILINE)
+    
+    # Count words and characters
+    word_count = len(re.findall(r'\w+', chunk))
+    char_count = len(chunk)
+    
+    return {
+        'headers': [{'level': len(h[0]), 'text': h[1]} for h in headers],
+        'word_count': word_count,
+        'char_count': char_count
+    }
+
+
+def process_code_example(*args) -> str:
+    """
+    Process a single code example to generate its summary.
+    This function is designed to be used with concurrent.futures.
+    
+    Args:
+        *args: Either a single tuple (code, context_before, context_after) or
+               separate arguments (code, source_id, url, chunk_index)
+        
+    Returns:
+        The generated summary
+    """
+    # Handle both direct calls and executor.map calls
+    if len(args) == 1 and isinstance(args[0], (tuple, list)):
+        # Called via executor.map with a single tuple
+        code, context_before, context_after = args[0]
+    elif len(args) == 4:
+        # Called directly with (code, source_id, url, chunk_index)
+        code, source_id, url, chunk_index = args
+        context_before = f"Source: {source_id}\nURL: {url}\nChunk: {chunk_index}"
+        context_after = ""
+    elif len(args) == 3:
+        # Called directly with (code, context_before, context_after)
+        code, context_before, context_after = args
+    else:
+        raise ValueError(f"Invalid number of arguments: {len(args)}. Expected 1, 3, or 4.")
+    
+    return generate_code_example_summary(code, context_before, context_after)

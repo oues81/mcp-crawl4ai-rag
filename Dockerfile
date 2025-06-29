@@ -1,56 +1,62 @@
-# Stage 1: Builder - Install dependencies with Poetry
-FROM python:3.12-slim AS builder
+# syntax=docker/dockerfile:1.4
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+# =============================================================================
+# ÉTAPE 1: BUILDER - Installation des dépendances
+# =============================================================================
+FROM python:3.11-slim as builder
+
+# Variables d'environnement pour Poetry
 ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends curl
+WORKDIR /app
 
-# Install poetry
+# Installation des dépendances système minimales
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Installation de Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
-ENV PATH="/root/.local/bin:$PATH"
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copie des fichiers de dépendances
+# Le contexte est la racine du projet, donc on spécifie le chemin
+COPY pyproject.toml poetry.lock ./
+
+# Installation des dépendances applicatives (uniquement 'main')
+# L'option --no-root empêche l'installation du projet lui-même, ce qui est bien car nous copions le code source plus tard.
+# Installe les dépendances de production uniquement (la syntaxe --no-dev est obsolète)
+RUN poetry install --no-root
+
+# =============================================================================
+# ÉTAPE 2: FINAL - Image d'exécution optimisée
+# =============================================================================
+FROM python:3.11-slim as final
+
+# Variables d'environnement
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    CRAWL4_AI_BASE_DIRECTORY=/data \
+    PORT=8002
+
 WORKDIR /app
 
-# Copy dependency files from the context root
-COPY pyproject.toml poetry.lock* ./
+# Copie des dépendances installées depuis l'étape builder
+COPY --from=builder /app /app
 
-# Install dependencies
-RUN poetry lock
-RUN poetry install --without dev --no-root
+# Copie du code source de l'application
+# Copie du code source de l'application, en utilisant le chemin correct fourni
+COPY ./docker/services/mcp-crawl4ai-rag/src /app/src
 
-# Install PyTorch for CPU separately to avoid dependency resolution issues
-RUN . /app/.venv/bin/activate && \
-    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Copie du script d'entrée et le rend exécutable
+COPY ./docker/services/mcp-crawl4ai-rag/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Stage 2: Final image
-FROM python:3.12-slim AS final
+EXPOSE ${PORT}
 
-# Create a non-root user
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+# Le point d'entrée exécute le script qui lance l'application
+ENTRYPOINT ["/app/entrypoint.sh"]
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-ENV PATH="/app/.venv/bin:$PATH"
-WORKDIR /app
-
-# Copy virtual env from builder stage
-COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
-
-# Copy the application source code from the context's src directory
-COPY --chown=appuser:appgroup src/ /app/src/
-
-# Switch to non-root user
-USER appuser
-
-# Expose the port the app runs on
-EXPOSE 8002
-
-# Define the command to run the application
-CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# La commande par défaut peut être surchargée, mais ici on lance uvicorn
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]

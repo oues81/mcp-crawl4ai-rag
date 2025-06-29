@@ -1,0 +1,67 @@
+# STAGE 1: Builder - Install dependencies with Poetry
+FROM python:3.12-slim as builder
+
+# Install poetry
+ENV POETRY_VERSION=1.8.2
+RUN pip install "poetry==$POETRY_VERSION"
+
+# Set Poetry configuration
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
+
+WORKDIR /app
+
+# Copy dependency definition files to leverage Docker cache
+COPY poetry.lock pyproject.toml ./
+
+# Install system dependencies required for building Python packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies using Poetry
+RUN poetry install --no-dev --no-root
+
+# Install sentence-transformers and its dependencies
+RUN pip install --no-cache-dir sentence-transformers
+
+
+# STAGE 2: Runtime - Create the final, lean image
+FROM python:3.12-slim as runtime
+
+# Set environment variables for the runtime environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8002 \
+    CRAWL4_AI_BASE_DIRECTORY=/data
+
+# Create a non-root user for security purposes
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser && \
+    mkdir -p /app /data && \
+    chown -R appuser:appgroup /app /data
+
+WORKDIR /app
+
+# Set PYTHONPATH to include /app/src
+ENV PYTHONPATH=/app/src
+
+# Copy installed packages from the builder stage
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Copy the application source code
+COPY --chown=appuser:appgroup src/ ./src/
+
+# Switch to the non-root user
+USER appuser
+
+# Expose the application port
+EXPOSE ${PORT}
+
+# Set the command to run the application, ensuring uvicorn is in the PATH
+CMD ["uvicorn", "src.crawl4ai_mcp:app", "--host", "0.0.0.0", "--port", "8002", "--log-level", "info"]
