@@ -1,0 +1,9 @@
+[tool.poetry]
+name = "debug-crawl4ai"
+version = "0.1.0"
+description = ""
+authors = []
+
+[tool.poetry.dependencies]
+python = "^3.12"
+crawl4ai = {version = "0.6.2", extras = ["cpu"]}

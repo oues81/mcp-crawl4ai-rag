@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import de l'application depuis crawl4ai_mcp
-from crawl4ai_mcp import app as crawl4ai_app
+from src.crawl4ai_mcp import app as crawl4ai_app
 
 # Création de l'application FastAPI
 app = FastAPI(

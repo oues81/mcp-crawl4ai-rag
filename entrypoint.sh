@@ -8,4 +8,5 @@
 set -e
 
 # Exécute la commande passée en argument (par exemple, uvicorn...)
-exec "$@"
+# Exécute la commande passée en argument (le CMD du Dockerfile) en utilisant le contexte de Poetry
+exec poetry run "$@"

@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.4
+
+# =============================================================================
+# ÉTAPE 1: BUILDER - Installation des dépendances
+# =============================================================================
+FROM python:3.12-slim as builder
+
+# Variables d'environnement pour Poetry
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
+
+WORKDIR /app
+
+# Installation des dépendances système minimales
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Installation de Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copie des fichiers de dépendances
+# Le contexte est la racine du projet, donc on spécifie le chemin
+COPY pyproject.toml ./ 
+
+# Installation des dépendances applicatives (uniquement 'main')
+# L'option --no-root empêche l'installation du projet lui-même, ce qui est bien car nous copions le code source plus tard.
+# Installe les dépendances de production uniquement (la syntaxe --no-dev est obsolète)
+RUN poetry install --all-extras --no-root
+
+# =============================================================================
+# ÉTAPE 2: FINAL - Image d'exécution optimisée
+# =============================================================================
+FROM python:3.12-slim as final
+
+# Copier l'installation de Poetry et son environnement depuis l'étape de build
+COPY --from=builder /root/.local /root/.local
+
+# Variables d'environnement
+# Ajout des variables Poetry pour désactiver la création de venv dans l'image finale
+# On ajoute /app au PYTHONPATH pour que les imports (ex: src.main) fonctionnent
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    CRAWL4_AI_BASE_DIRECTORY=/data \
+    PORT=8002 \
+    PATH="/root/.local/bin:$PATH" \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
+
+WORKDIR /app
+
+# Copie des fichiers de projet nécessaires pour que Poetry fonctionne
+COPY pyproject.toml poetry.lock ./
+
+# Copie des dépendances (paquets installés) et des exécutables depuis l'étape builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copie du code source de l'application
+# Le chemin correct vers le code source, vérifié, est celui-ci.
+COPY ./docker/services/mcp-crawl4ai-rag/src /app/src
+
+# Copie du script d'entrée et le rend exécutable
+COPY ./docker/services/mcp-crawl4ai-rag/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE ${PORT}
+
+# Plus besoin de script d'entrée, on peut appeler uvicorn directement
+# car il est dans le PATH global de l'image.
+# ENTRYPOINT ["/app/entrypoint.sh"]
+
+# La commande par défaut peut être surchargée, mais ici on lance uvicorn
+
+
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
