@@ -8,7 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Variables d'environnement
-ENV PYTHONPATH=/app \
+ENV PYTHONPATH=/app:/app/src \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     CRAWL4_AI_BASE_DIRECTORY=/data \
@@ -22,17 +22,9 @@ RUN pip install --no-cache-dir -U pip && \
 RUN playwright install --with-deps
 
 # Copie du code source de l'application
-COPY ./docker/services/mcp-crawl4ai-rag/src /app/
-
-# Création du répertoire knowledge_graphs s'il n'existe pas
-RUN mkdir -p /app/knowledge_graphs
-
-# Copie des fichiers nécessaires
-COPY ./docker/services/mcp-crawl4ai-rag/src/knowledge_graphs /app/knowledge_graphs/
-COPY ./docker/services/mcp-crawl4ai-rag/src/main.py /app/
-COPY ./docker/services/mcp-crawl4ai-rag/src/crawl4ai_mcp.py /app/
+COPY ./docker/services/mcp-crawl4ai-rag/src /app/src
 
 EXPOSE ${PORT}
 
 # Commande de démarrage
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
