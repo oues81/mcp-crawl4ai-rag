@@ -29,8 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Monter l'application crawl4ai sous le préfixe /api
-app.mount("/api", crawl4ai_app)
+# Monter l'application crawl4ai sous le préfixe /mcp
+app.mount("/mcp", crawl4ai_app)
 
 # Point de terminaison de santé
 @app.get("/health")

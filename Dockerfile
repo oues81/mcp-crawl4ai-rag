@@ -14,12 +14,29 @@ ENV PYTHONPATH=/app:/app/src \
     CRAWL4_AI_BASE_DIRECTORY=/data \
     PORT=8002
 
-# Installation des dépendances avec pip
-RUN pip install --no-cache-dir -U pip && \
-    pip install --no-cache-dir "crawl4ai[cpu]" "fastapi[all]" "uvicorn[standard]" "pydantic[email]" "pydantic-settings" "python-dotenv" "httpx[http2]" "anyio" "gunicorn" "mcp" "fastmcp" "supabase" "beautifulsoup4" "lxml" "aiofiles" "aiohttp" "aiosqlite" "brotli" "chardet" "click" "colorama" "cssselect" "fake-useragent" "humanize" "litellm" "nltk" "numpy" "pillow" "playwright" "psutil" "pyopenssl" "pyperclip" "rank-bm25" "rich" "snowballstemmer" "tf-playwright-stealth" "xxhash" "sqlalchemy" "alembic" "pandas" "neo4j" "python-jose[cryptography]" "passlib[bcrypt]" "python-slugify" "pyyaml" "jinja2" "sentence-transformers" "openai" "huggingface-hub" "torch" "transformers" "fastapi-pagination" "python-multipart"
+# Installation de Poetry
+ENV POETRY_VERSION=1.8.2 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    PATH="$POETRY_HOME/bin:$PATH"
 
-# Installation des navigateurs pour Playwright
-RUN playwright install --with-deps
+# Installation de Poetry et configuration
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    curl -sSL https://install.python-poetry.org | python3 - && \
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry && \
+    chmod 755 /root/.local/bin/poetry && \
+    poetry config virtualenvs.create false && \
+    poetry config virtualenvs.in-project false
+
+# Copie des fichiers de dépendances
+COPY pyproject.toml poetry.lock* ./
+
+# Installation des dépendances avec Poetry
+RUN poetry install --no-interaction --no-ansi --no-root --only main && \
+    # Nettoyage
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copie du code source de l'application
 COPY ./docker/services/mcp-crawl4ai-rag/src /app/src

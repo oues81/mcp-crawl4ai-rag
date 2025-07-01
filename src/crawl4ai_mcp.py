@@ -190,7 +190,7 @@ mcp = FastMCP(
     "mcp-crawl4ai-rag",
     lifespan=crawl4ai_lifespan,
     host=os.getenv("HOST", "0.0.0.0"),
-    port=int(os.getenv("PORT", "8051"))
+    port=8002  # Utiliser le même port que dans le Dockerfile
 )
 
 # --- Tool Functions ---
@@ -294,7 +294,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/mcp", mcp)
+# Inclure les routes MCP sous le préfixe /tools
+app.include_router(mcp.router, prefix="/tools", tags=["mcp-tools"])
 
 @app.get("/health")
 async def health_check():
