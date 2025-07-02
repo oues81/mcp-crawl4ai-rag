@@ -1,10 +1,35 @@
-fastapi==0.115.14
-uvicorn[standard]==0.27.1
-python-dotenv==1.1.0
-fastmcp==2.9.2
-pydantic==2.7.0
-pydantic-settings==2.7.0
-python-multipart==0.0.9
-torch==2.2.1+cpu --index-url https://download.pytorch.org/whl/cpu
-sentence-transformers==2.5.1
-faiss-cpu==1.7.4
+# Core dependencies
+fastapi==0.115.13
+uvicorn[standard]==0.34.3
+python-multipart==0.0.20
+pydantic>=2.0.0,<3.0.0
+
+# Data processing
+pandas>=2.1.4,<3.0.0
+numpy>=1.26.4,<2.0.0
+python-frontmatter>=1.1.0,<2.0.0
+pyyaml>=6.0.1,<7.0.0
+
+# Web scraping & APIs
+requests>=2.32.4,<3.0.0
+beautifulsoup4>=4.12.3,<5.0.0
+lxml>=4.9.3,<5.0.0
+
+# Utils
+python-dotenv>=0.21.0,<2.0.0
+psutil>=7.0.0,<6.0.0
+
+# Database
+psycopg2-binary>=2.9.9,<3.0.0
+
+# Crawl4AI
+crawl4ai>=0.1.0,<1.0.0
+
+# Optimizations for CPU only
+torch>=2.0.0,<3.0.0 --index-url https://download.pytorch.org/whl/cpu
+transformers>=4.30.0,<5.0.0 --no-deps
+sentence-transformers>=2.2.2,<3.0.0 --no-deps
+
+# Optimize build
+--no-binary :all:
+--prefer-binary

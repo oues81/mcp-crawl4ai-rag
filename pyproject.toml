@@ -1,36 +1,90 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "mcp-crawl4ai-rag"
 version = "0.1.0"
 description = "MCP Crawl4AI RAG Service"
-authors = ["Windsurf Cascade <support@windsurf.ai>"]
+authors = [
+    {name = "Windsurf Cascade", email = "support@windsurf.ai"}
+]
+requires-python = ">=3.12"
 readme = "README.md"
-packages = [{include = "src"}]
-package-mode = true
+license = {text = "MIT"}
 
-[tool.poetry.dependencies]
-python = "^3.12"
-fastapi = "^0.110.0"
-uvicorn = {extras = ["standard"], version = "^0.28.0"}
-python-dotenv = "^1.0.0"
-fastmcp = "^2.9.0"
-pydantic = "^2.7.0"
-pydantic-settings = "^2.7.0"
-python-multipart = "^0.0.9"
-torch = {version = "^2.2.1", source = "pytorch-cpu"}
-sentence-transformers = "^2.7.0"
-faiss-cpu = "^1.7.4"
-httpx = "^0.27.0"
-numpy = "^1.26.0"
-tqdm = "^4.66.0"
-scikit-learn = "^1.4.0"
-scipy = "^1.12.0"
+# Dépendances principales
+dependencies = [
+    # Framework web
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.27.0,<1.0.0",
+    "python-multipart>=0.0.9,<1.0.0",
+    
+    # Gestion de la configuration
+    "python-dotenv>=1.1.0,<2.0.0",
+    "pydantic>=2.7.0,<3.0.0",
+    "pydantic-settings>=2.7.0,<3.0.0",
+    
+    # MCP et RAG
+    "fastmcp>=2.8.0,<3.0.0",
+    "crawl4ai>=0.6.0,<1.0.0",
+    
+    # NLP (CPU uniquement)
+    "torch>=2.2.0,<3.0.0",
+    "transformers>=4.40.0,<5.0.0",
+    
+    # Base de données vectorielle (version CPU uniquement)
+    "faiss-cpu>=1.7.4,<2.0.0",
+    "sentence-transformers>=2.7.0,<3.0.0",
+    
+    # Traitement des données
+    "numpy>=1.26.0,<2.0.0",
+    "pandas>=2.1.0,<3.0.0",
+    "scikit-learn>=1.4.0,<2.0.0",
+    "scipy>=1.12.0,<2.0.0",
+    "tqdm>=4.66.0,<5.0.0",
+    
+    # Requêtes HTTP
+    "httpx[http2]>=0.26.0,<1.0.0",
+    
+    # Base de données
+    "supabase>=2.3.4,<3.0.0",
+    "psycopg2-binary>=2.9.9,<3.0.0",
+    "neo4j>=5.0.0,<6.0.0",  # Driver pour la base de données Neo4j
+    
+    # Utilitaires
+    "loguru>=0.7.2,<1.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=5.3.0,<6.0.0"
+]
 
-[[tool.poetry.source]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-priority = "supplemental"
+# Dépendances optionnelles
+[project.optional-dependencies]
+pdf = ["pypdf>=3.17.0,<4.0.0"]
+docx = ["python-docx>=1.0.0,<2.0.0"]
+unstructured = ["unstructured>=0.12.0,<1.0.0"]
+
+# Configuration de la qualité du code
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+select = ["E", "F", "I"]
+
+[tool.ruff.mccabe]
+max-complexity = 10
+
+# Configuration du formatage
+[tool.black]
+line-length = 88
+target-version = ['py312']
+include = '\\.pyi?$'
+
+# Configuration de setuptools
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
 
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"

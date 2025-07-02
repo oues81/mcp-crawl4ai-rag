@@ -1,0 +1,160 @@
+version: '3.8'
+
+# Configuration réseau
+networks:
+  mcp-network:
+    driver: bridge
+
+# Variables d'environnement communes
+x-env: &default-env
+  # Configuration du serveur
+  TRANSPORT: sse
+  HOST: 0.0.0.0
+  PORT: 8002
+  
+  # Clés API (requises)
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?"OPENAI_API_KEY doit être défini"}
+  SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}
+  SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?"SUPABASE_SERVICE_KEY doit être défini"}
+  
+  # Configuration du modèle
+  MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
+  
+  # Fonctionnalités optionnelles
+  USE_CONTEXTUAL_EMBEDDINGS: ${USE_CONTEXTUAL_EMBEDDINGS:-false}
+  USE_HYBRID_SEARCH: ${USE_HYBRID_SEARCH:-false}
+  USE_AGENTIC_RAG: ${USE_AGENTIC_RAG:-false}
+  USE_RERANKING: ${USE_RERANKING:-false}
+  USE_KNOWLEDGE_GRAPH: ${USE_KNOWLEDGE_GRAPH:-false}
+  
+  # Configuration Neo4j (si USE_KNOWLEDGE_GRAPH=true)
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:?"NEO4J_PASSWORD doit être défini si USE_KNOWLEDGE_GRAPH=true"}
+  
+  # Optimisations
+  PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
+  PYTHONFAULTHANDLER: 1
+  CRAWL4_AI_BASE_DIRECTORY: /app/data
+
+services:
+  # Service principal MCP Crawl4AI RAG
+  mcp-crawl4ai-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    
+    ports:
+      - "${API_PORT:-8002}:8002"
+    
+    # Volumes pour la persistance et le cache
+    volumes:
+      - pip-cache:/root/.cache/pip
+      - model-cache:/root/.cache
+      - crawl4ai-data:/app/data
+      - ./logs:/app/logs
+      - ./src:/app/src:ro
+    
+    # Configuration du déploiement
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    
+    # Redémarrage automatique sauf arrêt manuel
+    restart: unless-stopped
+    
+    # Configuration réseau
+    networks:
+      - mcp-network
+    
+    environment:
+      <<: *default-env
+      
+      # Chemins de l'application
+      APP_DATA_DIR: /app/data
+      LOG_DIR: /app/logs
+      
+      # Configuration des répertoires de cache
+      CACHE_DIR: /app/.cache
+      PIP_CACHE_DIR: /app/.cache/pip
+      XDG_CACHE_HOME: /app/.cache
+      
+      # Configuration pour éviter les téléchargements inutiles
+      TRANSFORMERS_OFFLINE: 1
+      HF_DATASETS_OFFLINE: 1
+      HF_EVALUATE_OFFLINE: 1
+      HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
+      TORCH_HOME: /app/.cache/torch
+      
+      # Configuration Python
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONPATH: /app
+      PYTHONFAULTHANDLER: 1
+      
+      # Configuration du logging
+      LOG_LEVEL: INFO
+      
+      # Configuration du service
+      HOST: ${API_HOST:-0.0.0.0}
+      PORT: ${API_PORT:-8002}
+    
+    # Configuration de la santé
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    
+    # Commande de démarrage personnalisée
+    command: ["/app/startup.sh"]
+
+# Services supplémentaires
+  # Service API Gateway
+  api-gateway:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./config/nginx/conf.d:/etc/nginx/conf.d
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - mcp-crawl4ai-rag
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # Service RAG (si nécessaire)
+  rag-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      <<: *default-env
+      SERVICE_TYPE: rag
+    volumes:
+      - ./src:/app/src:ro
+      - crawl4ai-data:/app/data
+    networks:
+      - mcp-network
+    restart: unless-stopped
+    depends_on:
+      - mcp-crawl4ai-rag
+
+# Définition des volumes persistants
+volumes:
+  pip-cache:
+    name: mcp-crawl4ai-pip-cache
+    driver: local
+  model-cache:
+    name: mcp-crawl4ai-model-cache
+    driver: local
+  crawl4ai-data:
+    name: mcp-crawl4ai-data
+    driver: local

@@ -1,9 +1,12 @@
-# Fichiers Python
-__pycache__
+# Python
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+.python-version
+
+# Build and distribution
 build/
 develop-eggs/
 dist/
@@ -20,33 +23,138 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environnements virtuels
-.venv
+# Virtual environments
+.venv/
 env/
 venv/
 ENV/
 
-# Fichiers de configuration
+# Environment files
 .env
-.venv
+.env.*
+!.env.example
 
-# Fichiers de cache
-.cache
+# Cache and logs
+.cache/
 .coverage
 htmlcov/
+.pytest_cache/
+.mypy_cache/
+logs/
+*.log
 
-# Fichiers de développement
+# Development
 .tox/
 .nox/
-.coverage
 .coverage.*
-.cache
-nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
-.pytest_cache/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Git
+.git/
+.gitignore
+
+# Data and models
+*.pth
+*.bin
+*.h5
+*.pt
+*.pkl
+*.joblib
+
+# Documentation
+site/
+docs/_build/
+
+# Tests
+tests/
+*.test
+
+# Jupyter notebooks
+*.ipynb
+*.ipynb_checkpoints/
+
+# Local development
+local/
+dev/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# Fichiers d'IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Fichiers de logs
+*.log
+logs/
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+*~
+
+# Fichiers de données volumineux
+*.h5
+*.hdf5
+*.pth
+*.bin
+*.pt
+*.pkl
+*.joblib
+
+# Dossiers spécifiques au projet
+/data/
+/logs/
+/notebooks/
+/tests/
+/docs/
+
+# Fichiers de déploiement
+docker-compose.override.yml
+Dockerfile.dev
+docker-compose.dev.yml
+
+# Fichiers spécifiques à Poetry
+poetry.lock
+
+# Fichiers spécifiques à Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Fichiers spécifiques à Git
+.git/
+.gitignore
+.gitattributes
+
+# Fichiers spécifiques à Docker
+.dockerignore
+Dockerfile.bak*
+
+# Fichiers spécifiques aux modèles
+/models/
+/checkpoints/
 
 # Fichiers système
 .DS_Store

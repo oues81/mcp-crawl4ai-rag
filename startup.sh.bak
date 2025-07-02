@@ -7,7 +7,7 @@ log() {
 }
 
 # Vérifier que les commandes nécessaires sont disponibles
-for cmd in curl pg_isready; do
+for cmd in curl; do
     if ! command -v $cmd &> /dev/null; then
         log "ERREUR: La commande $cmd est requise mais n'est pas installée"
         exit 1
@@ -17,15 +17,20 @@ done
 # Vérifier si les variables d'environnement requises sont définies
 log "Vérification des variables d'environnement requises..."
 
+# Variables requises pour le démarrage du service
 REQUIRED_VARS=(
     "DATABASE_URL"
     "REDIS_URL"
     "QDRANT_URL"
     "VAULT_URL"
     "SUPABASE_URL"
-    "SUPABASE_KEY"
-    "OPENAI_API_KEY"
+    "SUPABASE_SERVICE_KEY"
 )
+
+# Variables optionnelles
+if [ -z "$OPENAI_API_KEY" ]; then
+    log "ATTENTION: La variable OPENAI_API_KEY n'est pas définie - certaines fonctionnalités d'IA pourraient ne pas être disponibles"
+fi
 
 MISSING_VARS=()
 
@@ -46,15 +51,37 @@ fi
 
 log "Toutes les variables d'environnement requises sont définies"
 
+# Compatibilité des clés Supabase
+SUPABASE_KEY=${SUPABASE_SERVICE_KEY:-$SUPABASE_KEY}
+
+# Vérification explicite de la connexion à Supabase
+log "Vérification de la connexion à Supabase avec clé API..."
+curl_response=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/")
+
+if [ "$curl_response" -ne 200 ]; then
+    log "ERREUR: Impossible de se connecter à Supabase (code: $curl_response)"
+    log "Vérifiez que :"
+    log "1. La clé de service est valide"
+    log "2. Les permissions RLS sont correctement configurées"
+    exit 1
+else
+    log "Connexion à Supabase validée (code 200)"
+fi
+
 # Fonction pour vérifier si un service est prêt
 wait_for_service() {
     local service_name=$1
     local host=$2
     local port=$3
-    local max_retries=30
+    local max_retries=60
     local retry_count=0
     
     log "Vérification de la disponibilité de $service_name sur $host:$port..."
+    
+    log "Vérification de la résolution DNS..."
+    nslookup wfegqfiysmvkqlbcwiot.supabase.co
+    log "Test de connexion TCP..."
+    nc -zv wfegqfiysmvkqlbcwiot.supabase.co 443
     
     while [ $retry_count -lt $max_retries ]; do
         if nc -z -w 5 "$host" "$port" 2>/dev/null; then
@@ -109,18 +136,46 @@ extract_host_port() {
     echo "$host $port"
 }
 
-# Vérifier PostgreSQL - Désactivé temporairement pour le débogage
-log "ATTENTION: Vérification de la base de données désactivée pour le débogage"
-read DB_HOST DB_PORT < <(extract_host_port "$DATABASE_URL" 5432)
-log "Configuration de la base de données - Hôte: $DB_HOST, Port: $DB_PORT"
+# Vérification de la connexion à Supabase
+log "Vérification de la connexion à Supabase..."
+SUPABASE_HOST=$(echo $SUPABASE_URL | awk -F[/:] '{print $4}')
+SUPABASE_PORT=443
+
+if ! wait_for_service "Supabase" "$SUPABASE_HOST" "$SUPABASE_PORT"; then
+    log "ERREUR: Impossible de se connecter à Supabase à $SUPABASE_HOST:$SUPABASE_PORT"
+    exit 1
+fi
+
+log "Connexion à Supabase établie avec succès"
+
+# Extraire les informations de connexion de DATABASE_URL
+DB_HOST=$(echo $DATABASE_URL | awk -F'[@:]' '{print $4}')
+DB_PORT=$(echo $DATABASE_URL | awk -F'[@:]' '{print $5}' | cut -d'/' -f1)
+DB_NAME=$(echo $DATABASE_URL | awk -F'/' '{print $NF}')
+DB_USER=$(echo $DATABASE_URL | awk -F'[/:]' '{print $4}')
+DB_PASS=$(echo $DATABASE_URL | awk -F'[/:@]' '{print $4}')
 
 # Vérification manuelle de la connexion
 log "Test de connexion à la base de données avec psql..."
-if PGPASSWORD=postgres psql -h "$DB_HOST" -U postgres -d sti_map_generator -c 'SELECT 1;' &>/dev/null; then
-    log "Connexion à PostgreSQL réussie avec psql"
+# Utilisation de l'adresse IP directement pour éviter les problèmes de résolution DNS
+DB_IP=$(echo $DATABASE_URL | grep -oP 'postgresql://[^:]+:[^@]+@\K[^:/]+')
+if [ -z "$DB_IP" ]; then
+    DB_IP="db"  # Fallback au nom d'hôte si l'extraction échoue
+fi
+
+if PGPASSWORD="$DB_PASS" psql -h "$DB_IP" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c 'SELECT 1;' &>/dev/null; then
+    log "Connexion à PostgreSQL réussie avec psql sur $DB_IP"
 else
     log "ERREUR: Échec de la connexion à PostgreSQL avec psql"
-    log "Détails de la commande: PGPASSWORD=postgres psql -h $DB_HOST -U postgres -d sti_map_generator -c 'SELECT 1;'"
+    log "Détails de la connexion:"
+    log "  - Hôte: $DB_IP (extrait de DATABASE_URL)"
+    log "  - Port: $DB_PORT"
+    log "  - Base de données: $DB_NAME"
+    log "  - Utilisateur: $DB_USER"
+    log "Détails de la commande: PGPASSWORD=***** psql -h $DB_IP -p $DB_PORT -U $DB_USER -d $DB_NAME -c 'SELECT 1;'"
+    log "Vérifiez que la base de données est en cours d'exécution et accessible depuis ce conteneur"
+    log "Tentative de résolution du nom d'hôte 'db': $(getent hosts db || echo 'Échec de résolution')"
+    log "Test de connectivité réseau: $(ping -c 1 $DB_IP >/dev/null 2>&1 && echo 'Ping réussi' || echo 'Ping échoué')"
     # Ne pas quitter pour permettre le débogage
     # exit 1
 fi
@@ -180,18 +235,11 @@ cleanup() {
 # Capturer les signaux d'arrêt
 trap cleanup SIGINT SIGTERM
 
-# Démarrer le service
-log "Démarrage du service MCP-Crawl4AI-RAG..."
-
-# Exécuter les migrations si nécessaire
-if [ "$RUN_MIGRATIONS" = "true" ]; then
-    log "Exécution des migrations de base de données..."
-    if ! alembic upgrade head; then
-        log "ERREUR: Échec de l'exécution des migrations"
-        exit 1
-    fi
-    log "Migrations exécutées avec succès"
-fi
+# Démarrage du service
+log "Démarrage du service MCP Crawl4AI RAG..."
+log "Version de Python: $(python --version)"
+log "Chemin Python: $(which python)"
+log "Chemin Uvicorn: $(which uvicorn)"
 
 # Vérifier que le répertoire source existe
 if [ ! -d "/app/src" ]; then
@@ -200,7 +248,7 @@ if [ ! -d "/app/src" ]; then
     exit 1
 fi
 
-# Vérifier que le fichier main.py existe
+# Vérifier que le fichier main.py existe dans src
 if [ ! -f "/app/src/main.py" ]; then
     log "ERREUR: Le fichier /app/src/main.py est introuvable"
     ls -la /app/src
@@ -214,19 +262,7 @@ pip list | grep -E "fastapi|uvicorn|sqlalchemy|alembic"
 log "============================="
 
 # Démarrer l'application
-log "Démarrage de l'application sur le port $PORT..."
+log "Démarrage de l'application sur le port ${PORT:-8002}..."
 log "Contenu du répertoire /app: $(ls -la /app)"
 
-# Exporter PYTHONPATH pour inclure /app
-export PYTHONPATH="/app:$PYTHONPATH"
-
-set -x
-# Lancer l'application avec le bon nom de module
-if [ -f "/app/src/main.py" ]; then
-    log "Fichier main.py trouvé dans /app/src/"
-    cd /app/src
-    exec uvicorn main:app --host 0.0.0.0 --port $PORT --reload
-else
-    log "ERREUR: Impossible de trouver le fichier main.py dans /app/src/"
-    exit 1
-fi
+exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8002} --log-level info

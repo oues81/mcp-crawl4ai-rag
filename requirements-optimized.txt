@@ -1,0 +1,29 @@
+# Core (uniquement les dépendances essentielles)
+fastapi==0.115.13
+pydantic>=2.0.0
+uvicorn==0.34.3
+python-multipart==0.0.20
+
+# Data processing (uniquement si utilisés par crawl4ai)
+pandas>=2.1.4
+numpy>=1.26.4
+python-frontmatter>=1.1.0
+pyyaml>=6.0.1
+
+# Web scraping & APIs (uniquement si utilisés par crawl4ai)
+requests>=2.32.4
+beautifulsoup4>=4.12.3
+lxml>=4.9.3
+
+# Utils
+python-dotenv>=0.21.0
+psutil>=7.0.0
+
+# Base de données (uniquement si utilisés)
+psycopg2-binary>=2.9.9
+
+# Pour crawl4ai (si nécessaire)
+crawl4ai>=0.1.0
+
+# Optimisation de la taille de l'image
+--no-binary :all:

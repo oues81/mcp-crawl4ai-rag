@@ -5,38 +5,19 @@ import os
 import sys
 import uvicorn
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 # Configuration du Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Vérification du répertoire courant
+print(f"Répertoire de travail: {os.getcwd()}")
+print(f"Contenu du répertoire: {os.listdir('.')}")
 
 # Import de l'application depuis crawl4ai_mcp
-from src.crawl4ai_mcp import app as crawl4ai_app
+from crawl4ai_mcp import mcp
 
-# Création de l'application FastAPI
-app = FastAPI(
-    title="MCP Crawl4AI RAG Service",
-    description="Service d'API pour le crawling web et RAG avec MCP",
-    version="0.1.0"
-)
-
-# Configuration CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Monter l'application crawl4ai sous le préfixe /mcp
-app.mount("/mcp", crawl4ai_app)
-
-# Point de terminaison de santé
-@app.get("/health")
-async def health_check():
-    """Endpoint de vérification de la santé du service."""
-    return {"status": "healthy"}
+# Création d'une nouvelle instance FastAPI
+app = mcp.app
 
 # Point d'entrée principal
 @app.get("/")
@@ -48,28 +29,36 @@ async def root():
         "version": "0.1.0",
         "endpoints": {
             "health": "/health",
-            "api_docs": "/api/docs",
-            "openapi_schema": "/api/openapi.json"
+            "docs": "/docs",
+            "redoc": "/redoc",
+            "openapi": "/openapi.json"
         }
     }
+
+# Point de terminaison de santé
+@app.get("/health")
+async def health_check():
+    """Endpoint de vérification de la santé du service."""
+    return {"status": "healthy"}
+
 @app.on_event("startup")
 async def startup_event():
     """Événement de démarrage de l'application."""
     # Configuration du répertoire de base pour crawl4ai
     os.makedirs("/app/data", exist_ok=True)
-    os.environ["CRAWL4_AI_BASE_DIRECTORY"] = "/app/data"
-    print(f"Répertoire de base pour crawl4ai configuré sur: {os.environ['CRAWL4_AI_BASE_DIRECTORY']}")
+    os.makedirs("/app/logs", exist_ok=True)
+    print("Démarrage du service MCP Crawl4AI RAG...")
 
 if __name__ == "__main__":
     # Configuration du serveur
     host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8002"))
+    port = int(os.getenv("PORT", "8051"))
     
     # Affichage des informations de démarrage
     print(f"Démarrage du service MCP Crawl4AI RAG sur http://{host}:{port}")
     print(f"Documentation de l'API disponible sur http://{host}:{port}/docs")
     
-    # Démarrage du serveur
+    # Démarrer le serveur Uvicorn
     uvicorn.run(
         "main:app",
         host=host,

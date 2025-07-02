@@ -1,109 +1,172 @@
 # syntax=docker/dockerfile:1.4
 
-# Étape 1: Builder pour l'installation des dépendances
+# Utilisation d'une image de base légère avec Python 3.12
 FROM python:3.12-slim as builder
 
 # Définition des variables d'environnement
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH="/app" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_DEFAULT_TIMEOUT=100
+    PIP_DEFAULT_TIMEOUT=100 \
+    POETRY_VERSION=1.8.2
 
-# Installation des dépendances système
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Installation des dépendances système requises
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Dépendances pour la compilation Python
     build-essential \
+    # Dépendances pour Playwright
+    libglib2.0-0 \
+    libnss3 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libxkbcommon0 \
+    # Dépendances pour python-magic
+    libmagic1 \
+    # Utilitaires
     curl \
-    libpq-dev \
+    unzip \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Installation de Poetry
-ENV POETRY_VERSION=1.8.2
-RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+RUN pip install --no-cache-dir poetry==$POETRY_VERSION
 
-# Configuration du répertoire de travail
+# Configuration de Poetry pour ne pas créer d'environnement virtuel
+RUN poetry config virtualenvs.create false
+
+# Définition du répertoire de travail
 WORKDIR /app
 
 # Copie des fichiers de dépendances
-COPY pyproject.toml poetry.lock* ./
+COPY ./docker/services/mcp-crawl4ai-rag/pyproject.toml ./docker/services/mcp-crawl4ai-rag/poetry.lock* ./
 
-# Installation des dépendances avec Poetry
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.cache/pypoetry \
-    poetry config virtualenvs.create true && \
-    poetry config virtualenvs.in-project true && \
-    poetry install --no-interaction --no-ansi --no-root && \
-    poetry install --no-interaction --no-ansi --only main
+# Création des répertoires nécessaires
+RUN mkdir -p /app/src/knowledge_graphs /app/data /app/logs
 
-# Installation des dépendances spécifiques
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir sentence-transformers
+# Copie du code source
+COPY ./docker/services/mcp-crawl4ai-rag/src/__init__.py /app/src/
+COPY ./docker/services/mcp-crawl4ai-rag/src/main.py /app/src/
+COPY ./docker/services/mcp-crawl4ai-rag/src/crawl4ai_mcp.py /app/src/
+COPY ./docker/services/mcp-crawl4ai-rag/src/startup.sh /app/src/
+COPY ./docker/services/mcp-crawl4ai-rag/src/knowledge_graphs/ /app/src/knowledge_graphs/
 
-# Étape 2: Image d'exécution finale
+# Installation des dépendances Python avec Poetry
+RUN poetry install --no-interaction --no-ansi --no-root
+
+# Installation des dépendances supplémentaires
+RUN pip install --no-cache-dir \
+    playwright==1.39.0 \
+    python-magic-bin==0.4.14 \
+    && python -m playwright install --with-deps chromium
+
+# Installation des dépendances manquantes pour crawl4ai
+RUN pip install --no-cache-dir \
+    aiohttp \
+    aiofiles \
+    nest_asyncio \
+    lxml \
+    markdownify \
+    python-dotenv
+
+
+
+# Étape de construction finale
 FROM python:3.12-slim
 
 # Définition des variables d'environnement
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH="/app" \
+ENV \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PORT=8010 \
-    PATH="/app/.venv/bin:$PATH" \
-    # Optimisation des performances CPU
-    OMP_NUM_THREADS=1 \
-    MKL_NUM_THREADS=1 \
-    TOKENIZERS_PARALLELISM=false
+    PYTHONFAULTHANDLER=1 \
+    PYTHONPATH=/app \
+    PORT=8002 \
+    CRAWL4_AI_BASE_DIRECTORY=/data \
+    PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
 
 # Installation des dépendances système minimales
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libpq5 \
-    libmagic1 \
-    poppler-utils \
-    tesseract-ocr \
-    tesseract-ocr-fra \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Dépendances pour Playwright
+    libglib2.0-0 \
+    libnss3 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libxkbcommon0 \
+    # Utilitaires
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Création de l'utilisateur non-root
-RUN addgroup --system appgroup && \
-    adduser --system --no-create-home --ingroup appgroup appuser && \
-    mkdir -p /app && \
-    chown -R appuser:appgroup /app
+RUN useradd -m appuser && \
+    mkdir -p /app /data /logs && \
+    chown -R appuser:appuser /app /data /logs
 
-# Configuration du répertoire de travail
-WORKDIR /app
-
-# Copie de l'environnement virtuel depuis le builder
-COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
-
-# Copie du code source
-COPY --chown=appuser:appgroup src/ /app/src/
+# Copie des fichiers de l'application et des dépendances
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin/* /usr/local/bin/
 
 # Création des répertoires nécessaires
-RUN mkdir -p /app/data /app/logs /app/cache && \
-    chown -R appuser:appgroup /app/data /app/logs /app/cache
+RUN mkdir -p /app/src/knowledge_graphs /app/data /app/logs
+
+# Copie du code source
+COPY --from=builder /app/src/__init__.py /app/src/
+COPY --from=builder /app/src/main.py /app/src/
+COPY --from=builder /app/src/crawl4ai_mcp.py /app/src/
+COPY --from=builder /app/src/startup.sh /app/src/
+COPY --from=builder /app/src/knowledge_graphs/ /app/src/knowledge_graphs/
 
 # Configuration des permissions
-RUN chown -R appuser:appgroup /app
+RUN chown -R appuser:appuser /app /data /logs
 
-# Passe à l'utilisateur non-root
+# Commutation vers l'utilisateur non-root
 USER appuser
 
-# Configuration du service
-EXPOSE ${PORT}
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:$\{PORT\}/health || exit 1
+# Définition du répertoire de travail
+WORKDIR /app
 
-# Script de démarrage
-COPY --chown=appuser:appgroup startup.sh /app/startup.sh
-RUN chmod +x /app/startup.sh
+# Exposition du port
+EXPOSE ${PORT}
+
+# Rendre le script de démarrage exécutable
+RUN chmod +x /app/src/startup.sh
 
 # Commande de démarrage
-CMD ["/app/startup.sh"]
+CMD ["/app/src/startup.sh"]

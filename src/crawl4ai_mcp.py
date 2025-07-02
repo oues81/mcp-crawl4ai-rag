@@ -21,7 +21,7 @@ from xml.etree import ElementTree
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Body, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import CrossEncoder
 from supabase import Client
@@ -186,8 +186,10 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         print("Lifespan resources closed.")
 
 # --- MCP Server Instance ---
+# Initialiser FastMCP
 mcp = FastMCP(
     "mcp-crawl4ai-rag",
+    description="MCP server for RAG and web crawling with Crawl4AI",
     lifespan=crawl4ai_lifespan,
     host=os.getenv("HOST", "0.0.0.0"),
     port=8002  # Utiliser le même port que dans le Dockerfile
@@ -274,30 +276,8 @@ async def analyze_script_for_ai_patterns(ctx: Context, script_path: str) -> Dict
         return {"error": f"File not found at path: {script_path}"}
     return analyzer.analyze_script(script_path)
 
-# --- FastAPI App Setup ---
-# Création de l'application FastAPI
-app = FastAPI(
-    title="Crawl4AI MCP Server",
-    description="MCP server for web crawling, AI hallucination detection, and repository parsing.",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-    lifespan=crawl4ai_lifespan
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Inclure les routes MCP sous le préfixe /tools
-app.include_router(mcp.router, prefix="/tools", tags=["mcp-tools"])
-
-@app.get("/health")
+# --- Health Check Endpoint ---
+@mcp.get("/health")
 async def health_check():
     """Provides a simple health check endpoint."""
     return {"status": "healthy"}

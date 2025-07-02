@@ -1,47 +1,54 @@
-# syntax=docker/dockerfile:1.4
+# ===========================================
+# Étape finale - Construction de l'image finale
+# ===========================================
+FROM python:3.11-slim as final
 
-FROM python:3.12-slim
+# Création d'un utilisateur non-root pour la sécurité
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /sbin/nologin -c "Docker image user" appuser
 
-WORKDIR /app
+# Définition des variables d'environnement
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PATH="/app/.venv/bin:$PATH" \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONPATH=/app \
+    # Configuration des chemins
+    CRAWL4_AI_BASE_DIRECTORY=/app/data
 
 # Installation des dépendances système minimales
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 libopenblas-dev gfortran curl dnsutils netcat-openbsd \
+    git build-essential pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-# Variables d'environnement
-ENV PYTHONPATH=/app:/app/src \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    CRAWL4_AI_BASE_DIRECTORY=/data \
-    PORT=8002
+# Installation des dépendances Python
+WORKDIR /app
+COPY requirements.txt .
 
-# Installation de Poetry
-ENV POETRY_VERSION=1.8.2 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_CREATE=false \
-    PATH="$POETRY_HOME/bin:$PATH"
+# Installation des dépendances
+RUN pip install --no-cache-dir setuptools==70.0.0 wheel==0.43.0 && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Installation de Poetry et configuration
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
-    curl -sSL https://install.python-poetry.org | python3 - && \
-    ln -s /root/.local/bin/poetry /usr/local/bin/poetry && \
-    chmod 755 /root/.local/bin/poetry && \
-    poetry config virtualenvs.create false && \
-    poetry config virtualenvs.in-project false
+# Copie des sources
+COPY src/ src/
+COPY pyproject.toml .
 
-# Copie des fichiers de dépendances
-COPY pyproject.toml poetry.lock* ./
+# Exposition du port utilisé par l'application
+EXPOSE 8051
 
-# Installation des dépendances avec Poetry
-RUN poetry install --no-interaction --no-ansi --no-root --only main && \
-    # Nettoyage
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Définition de l'utilisateur non-root
+USER appuser
 
-# Copie du code source de l'application
-COPY ./docker/services/mcp-crawl4ai-rag/src /app/src
+# Configuration pour forcer l'utilisation du CPU
+ENV DISABLE_GPU=1 \
+    TF_CPP_MIN_LOG_LEVEL=2 \
+    TF_ENABLE_ONEDNN_OPTS=0 \
+    TORCH_USE_CUDA=0 \
+    PYTORCH_CUDA_ALLOC_CONF=0
 
-EXPOSE ${PORT}
-
-# Commande de démarrage
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# Commande de démarrage du serveur MCP
+CMD ["python", "src/crawl4ai_mcp.py"]
