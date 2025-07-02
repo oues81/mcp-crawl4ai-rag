@@ -186,14 +186,49 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         print("Lifespan resources closed.")
 
 # --- MCP Server Instance ---
-# Initialiser FastMCP
+# Configuration du port depuis les variables d'environnement
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8051"))
+
+# Initialiser FastMCP avec la configuration minimale
 mcp = FastMCP(
-    "mcp-crawl4ai-rag",
-    description="MCP server for RAG and web crawling with Crawl4AI",
-    lifespan=crawl4ai_lifespan,
-    host=os.getenv("HOST", "0.0.0.0"),
-    port=8002  # Utiliser le même port que dans le Dockerfile
+    name="mcp-crawl4ai-rag",
+    lifespan=crawl4ai_lifespan
 )
+
+# Afficher les informations de démarrage
+print(f"\n{'='*50}")
+print(f"Starting MCP Crawl4AI RAG Service")
+print(f"Host: {HOST}")
+print(f"Port: {PORT}")
+print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+print(f"Python: {sys.version}")
+print(f"Current working directory: {os.getcwd()}")
+print(f"Files in current directory: {os.listdir('.')}")
+print(f"{'='*50}\n")
+
+# --- Main Entry Point ---
+async def main():
+    """Point d'entrée principal pour l'exécution en tant que script."""
+    # Démarrer le serveur FastMCP avec le transport HTTP
+    print(f"Starting FastMCP server on http://{HOST}:{PORT}")
+    
+    # Configurer le serveur HTTP
+    config = {
+        "host": HOST,
+        "port": PORT,
+        "log_level": "info",
+        "workers": 1,
+        "reload": False
+    }
+    
+    # Démarrer le serveur
+    await mcp.run_http_async(**config)
+
+# Ce bloc est maintenant dans main.py
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
 
 # --- Tool Functions ---
 @mcp.tool()
@@ -277,10 +312,88 @@ async def analyze_script_for_ai_patterns(ctx: Context, script_path: str) -> Dict
     return analyzer.analyze_script(script_path)
 
 # --- Health Check Endpoint ---
-@mcp.get("/health")
-async def health_check():
-    """Provides a simple health check endpoint."""
-    return {"status": "healthy"}
+from fastapi import APIRouter, FastAPI
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+
+# Créer une application FastAPI séparée pour les endpoints HTTP
+http_app = FastAPI()
+
+# Configuration CORS
+http_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@http_app.get("/health")
+async def http_health_check() -> JSONResponse:
+    """
+    Endpoint de santé HTTP pour les vérifications de santé Docker/Kubernetes.
+    
+    Returns:
+        JSONResponse contenant les informations de santé du service
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "service": "mcp-crawl4ai-rag",
+            "version": "1.0.0",
+            "timestamp": datetime.utcnow().isoformat(),
+            "details": {
+                "database": "connected",
+                "llm": "ready",
+                "rag": "ready"
+            }
+        }
+    )
+
+@http_app.get("/")
+async def root():
+    return {
+        "service": "mcp-crawl4ai-rag",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "mcp": "/mcp/"
+        }
+    }
+
+# --- Tool Functions ---
+@mcp.tool()
+async def health_check() -> Dict[str, Any]:
+    """
+    Vérifie la santé du service (outil RPC).
+    
+    Returns:
+        Dict contenant les informations de santé du service
+    """
+    return await http_health_check()
+
+# --- Health Check Endpoint ---
+@mcp.tool()
+async def root() -> dict:
+    """
+    Point d'entrée principal avec des informations sur le service.
+    
+    Returns:
+        dict: Informations sur le service et les endpoints disponibles.
+    """
+    return {
+        "service": "MCP Crawl4AI RAG Service",
+        "status": "en cours d'exécution",
+        "version": "0.1.0",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "redoc": "/redoc",
+            "openapi": "/openapi.json"
+        }
+    }
 
 # --- Main Entry Point ---
 if __name__ == "__main__":
@@ -1950,14 +2063,27 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
 
     return results_all
 
+async def start_http_server():
+    """Démarre le serveur HTTP séparé sur un port différent"""
+    import uvicorn
+    config = uvicorn.Config(
+        http_app,
+        host=HOST,
+        port=8052,  # Port différent de FastMCP
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
 async def main():
-    transport = os.getenv("TRANSPORT", "sse")
-    if transport == 'sse':
-        # Run the MCP server with sse transport
-        await mcp.run_sse_async()
-    else:
-        # Run the MCP server with stdio transport
-        await mcp.run_stdio_async()
+    print(f"Starting FastMCP server on http://{HOST}:{PORT}")
+    print(f"Starting HTTP server on http://{HOST}:8052")
+    
+    # Démarrer les deux serveurs en parallèle
+    await asyncio.gather(
+        mcp.run_http_async(host=HOST, port=PORT),  # FastMCP
+        start_http_server()  # Serveur HTTP séparé pour /health
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -92,12 +92,24 @@ fi
 
 log "All pre-flight checks passed. Starting application."
 
-# 4. Start the application
-exec python -m uvicorn \
-    --host "${HOST}" \
-    --port "${PORT}" \
-    --workers "${WORKERS}" \
-    --log-level "info" \
-    --no-access-log \
-    --app-dir "${APP_DIR}" \
-    "src.crawl4ai_mcp:app"
+# 4. Vérifier les dépendances Python
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Vérification des dépendances Python..."
+if ! python -c "import fastmcp, uvicorn, setuptools" &>/dev/null; then
+    echo "[ERREUR] Une ou plusieurs dépendances Python sont manquantes" >&2
+    python -c "
+import sys
+for pkg in ['fastmcp', 'uvicorn', 'setuptools']:
+    try:
+        __import__(pkg)
+        print(f'✅ {pkg} est installé')
+    except ImportError as e:
+        print(f'❌ {pkg} est manquant: {e}')
+" >&2
+    exit 1
+fi
+
+# 5. Démarrer l'application
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Démarrage du service MCP Crawl4AI RAG..."
+cd "${APP_DIR}" || { echo "[ERREUR] Impossible de se déplacer dans ${APP_DIR}" >&2; exit 1; }
+
+exec python -m src.main

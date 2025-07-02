@@ -1,68 +1,44 @@
 """
 Point d'entrée principal du service MCP Crawl4AI RAG
+
+Ce fichier est l'entrée principale pour le service MCP Crawl4AI RAG.
+Il démarre le serveur FastMCP directement.
 """
+
 import os
 import sys
-import uvicorn
-from fastapi import FastAPI
+import asyncio
+from crawl4ai_mcp import mcp, main as mcp_main
 
-# Configuration du Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Vérification du répertoire courant
-print(f"Répertoire de travail: {os.getcwd()}")
-print(f"Contenu du répertoire: {os.listdir('.')}")
-
-# Import de l'application depuis crawl4ai_mcp
-from crawl4ai_mcp import mcp
-
-# Création d'une nouvelle instance FastAPI
-app = mcp.app
+# Configuration du port depuis les variables d'environnement
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8051"))
 
 # Point d'entrée principal
-@app.get("/")
-async def root():
-    """Point d'entrée principal avec des informations sur le service."""
-    return {
-        "service": "MCP Crawl4AI RAG Service",
-        "status": "en cours d'exécution",
-        "version": "0.1.0",
-        "endpoints": {
-            "health": "/health",
-            "docs": "/docs",
-            "redoc": "/redoc",
-            "openapi": "/openapi.json"
-        }
-    }
-
-# Point de terminaison de santé
-@app.get("/health")
-async def health_check():
-    """Endpoint de vérification de la santé du service."""
-    return {"status": "healthy"}
-
-@app.on_event("startup")
-async def startup_event():
-    """Événement de démarrage de l'application."""
-    # Configuration du répertoire de base pour crawl4ai
-    os.makedirs("/app/data", exist_ok=True)
-    os.makedirs("/app/logs", exist_ok=True)
-    print("Démarrage du service MCP Crawl4AI RAG...")
-
 if __name__ == "__main__":
-    # Configuration du serveur
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8051"))
+    # Afficher les informations de démarrage
+    print(f"\n{'='*80}")
+    print(f"{' MCP CRAWL4AI RAG SERVICE ':=^80}")
+    print(f"{'='*80}")
+    print(f"Host:           {HOST}")
+    print(f"Port:           {PORT}")
+    print(f"Environment:    {os.getenv('ENVIRONMENT', 'development')}")
+    print(f"Python:         {sys.version.split()[0]}")
+    print(f"Working dir:    {os.getcwd()}")
+    print(f"Python path:    {os.getenv('PYTHONPATH', 'Not set')}")
+    print(f"Virtual env:    {os.getenv('VIRTUAL_ENV', 'Not in a virtual environment')}")
+    print(f"Installed packages:")
     
-    # Affichage des informations de démarrage
-    print(f"Démarrage du service MCP Crawl4AI RAG sur http://{host}:{port}")
-    print(f"Documentation de l'API disponible sur http://{host}:{port}/docs")
+    # Afficher les packages installés (version courte)
+    try:
+        import pkg_resources
+        installed_packages = [f"{pkg.key}=={pkg.version}" for pkg in pkg_resources.working_set]
+        installed_packages.sort()
+        print("  " + "\n  ".join(installed_packages))
+    except Exception as e:
+        print(f"  Could not list installed packages: {e}")
     
-    # Démarrer le serveur Uvicorn
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=os.getenv("DEBUG", "false").lower() == "true",
-        log_level="info"
-    )
+    print(f"{'='*80}\n")
+    
+    # Démarrer le serveur FastMCP
+    asyncio.run(mcp_main())
