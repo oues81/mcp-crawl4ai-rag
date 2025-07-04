@@ -11,7 +11,7 @@ x-env: &default-env
   # Configuration du serveur
   TRANSPORT: sse
   HOST: 0.0.0.0
-  PORT: 8051
+  PORT: 8002  # Port principal du serveur
   
   # Clés API (requises)
   SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}

@@ -200,7 +200,7 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
 # --- MCP Server Instance ---
 # Configuration du port depuis les variables d'environnement
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "8051"))
+PORT = int(os.getenv("PORT", "8002"))  # Port par défaut 8002 pour correspondre à la configuration Docker
 
 # Afficher les informations de démarrage
 def print_startup_info():
@@ -225,6 +225,24 @@ def print_startup_info():
 # Afficher les informations de démarrage
 print_startup_info()
 
+# Créer une application FastAPI qui sera utilisée comme point d'entrée ASGI
+app = FastAPI()
+
+# Configuration CORS pour l'application principale
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Ajouter le routeur de santé à l'application FastAPI
+app.include_router(health_router, prefix="")
+
+# Variable pour stocker l'instance FastMCP
+mcp = None
+
 # Initialiser FastMCP avec la configuration minimale
 try:
     print("[INIT] Initializing FastMCP server...")
@@ -232,7 +250,12 @@ try:
         name="mcp-crawl4ai-rag",
         lifespan=crawl4ai_lifespan
     )
-    print("[INIT] FastMCP server initialized successfully")
+    # Ne pas démarrer le serveur FastMCP ici, on utilise uniquement le routeur
+    print("[INIT] FastMCP router initialized successfully")
+    
+    # Ajouter les routes de l'API MCP à l'application FastAPI
+    app.include_router(mcp.router, prefix="/mcp")
+    
 except Exception as e:
     print(f"[ERROR] Failed to initialize FastMCP server: {str(e)}")
     raise
@@ -300,33 +323,40 @@ async def main():
     print(f"- Environment: {os.getenv('ENVIRONMENT', 'development')}")
     
     # Démarrer le serveur HTTP de santé
+    http_server = None
+    http_task = None
     try:
         print("\n[INIT] Starting health check HTTP server...")
-        http_server = await start_http_server()
+        http_server, http_task = await start_http_server()
         print("[OK] Health check server started successfully")
     except Exception as e:
         print(f"[WARNING] Failed to start health check server: {str(e)}")
         http_server = None
+        http_task = None
     
-    # Démarrer le serveur MCP principal
-    server = None
     try:
-        print(f"\n[INIT] Starting MCP server on http://{HOST}:{PORT}")
-        server = Server(mcp, transport=server_config)
+        # Démarrer le serveur Uvicorn principal
+        config = uvicorn.Config(
+            app,
+            host=HOST,
+            port=PORT,
+            log_level=os.getenv("LOG_LEVEL", "info").lower(),
+            access_log=True,
+            timeout_keep_alive=30
+        )
         
-        # Démarrer le serveur de manière asynchrone
-        server_task = asyncio.create_task(server.serve())
+        server = uvicorn.Server(config)
         
         print("\n" + "="*70)
         print(f"{' MCP CrawL4AI RAG Service Started ':.^70}")
         print("="*70)
         print(f"Service URL: http://{HOST}:{PORT}")
-        print(f"Health check: http://{HOST}:8080/health")
+        print(f"Health check: http://{HOST}:{PORT}/health")
         print("="*70 + "\n")
         
-        # Attendre que le serveur s'arrête
-        await server_task
-        
+        # Démarrer le serveur Uvicorn
+        await server.serve()
+            
     except asyncio.CancelledError:
         print("\n[INFO] Server shutdown requested...")
     except Exception as e:
@@ -336,10 +366,14 @@ async def main():
         print("\n[SHUTDOWN] Shutting down services...")
         
         # Arrêter le serveur HTTP de santé s'il est en cours d'exécution
-        if http_server:
+        if http_server and http_task:
             try:
                 print("[SHUTDOWN] Stopping health check server...")
-                await http_server.shutdown()
+                http_task.cancel()
+                try:
+                    await http_task
+                except asyncio.CancelledError:
+                    pass
                 print("[OK] Health check server stopped")
             except Exception as e:
                 print(f"[WARNING] Error stopping health check server: {str(e)}")
@@ -437,24 +471,15 @@ async def analyze_script_for_ai_patterns(ctx: Context, script_path: str) -> Dict
     return analyzer.analyze_script(script_path)
 
 # --- Health Check Endpoint ---
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 
-# Créer une application FastAPI séparée pour les endpoints HTTP
-http_app = FastAPI()
+# Créer un routeur pour les endpoints de santé
+health_router = APIRouter()
 
-# Configuration CORS
-http_app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@http_app.get("/health")
+@health_router.get("/health")
 async def http_health_check() -> JSONResponse:
     """
     Endpoint de santé HTTP pour les vérifications de santé Docker/Kubernetes.
@@ -470,14 +495,14 @@ async def http_health_check() -> JSONResponse:
             "version": "1.0.0",
             "timestamp": datetime.utcnow().isoformat(),
             "details": {
-                "database": "connected",
+                "database": "connected" if os.getenv("NEO4J_URI") else "disconnected",
                 "llm": "ready",
                 "rag": "ready"
             }
         }
     )
 
-@http_app.get("/")
+@health_router.get("/")
 async def root():
     return {
         "service": "mcp-crawl4ai-rag",
@@ -2197,9 +2222,10 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
     return results_all
 
 async def start_http_server():
-    """Démarre le serveur HTTP séparé sur un port différent"""
+    """Démarre le serveur HTTP séparé sur le port 8052"""
     import uvicorn
     from fastapi import FastAPI
+    import asyncio
     
     # Créer une application FastAPI pour le serveur de santé
     health_app = FastAPI()
@@ -2209,24 +2235,34 @@ async def start_http_server():
     async def health_check():
         return {"status": "ok", "service": "mcp-crawl4ai-rag"}
     
-    # Configurer et démarrer le serveur
+    # Configurer le serveur sur le port 8052
     config = uvicorn.Config(
         health_app,
         host=HOST,
-        port=8052,
+        port=8052,  # Port fixe pour le serveur de santé
         log_level="info",
         access_log=True,
         timeout_keep_alive=30
     )
     
     server = uvicorn.Server(config)
+    
+    # Démarrer le serveur en arrière-plan
     print(f"Starting health check server on http://{HOST}:8052/health")
-    await server.serve()
+    
+    # Créer une tâche pour exécuter le serveur
+    task = asyncio.create_task(server.serve())
+    
+    # Attendre que le serveur soit prêt
+    await asyncio.sleep(1)
+    
+    # Retourner le serveur et la tâche
+    return server, task
 
 async def main():
     """Point d'entrée principal du service MCP Crawl4AI RAG"""
     print("=" * 80)
-    print(f"Starting MCP Crawl4AI RAG Service")
+    print("Starting MCP Crawl4AI RAG Service")
     print(f"Python version: {sys.version}")
     print(f"Working directory: {os.getcwd()}")
     print(f"Environment: {os.getenv('ENV', 'development')}")
@@ -2245,17 +2281,37 @@ async def main():
         
         # Démarrer les deux serveurs en parallèle
         print("Starting servers...")
-        try:
-            await asyncio.gather(
-                mcp.run_http_async(host=HOST, port=PORT),
-                start_http_server(),
-                return_exceptions=False
-            )
-        except Exception as e:
-            print(f"Error starting servers: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            raise
+        
+        # Créer les tâches pour les deux serveurs
+        mcp_server = asyncio.create_task(mcp.run_http_async(host=HOST, port=PORT))
+        health_server = asyncio.create_task(start_http_server())
+        
+        # Attendre que les deux serveurs démarrent ou qu'une erreur se produise
+        done, pending = await asyncio.wait(
+            {mcp_server, health_server},
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Vérifier si une des tâches a échoué
+        for task in done:
+            try:
+                await task
+            except Exception as e:
+                print(f"Error in server task: {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc()
+                
+                # Annuler les autres tâches
+                for pending_task in pending:
+                    pending_task.cancel()
+                
+                # Relancer l'exception pour arrêter le programme
+                raise
+        
+        # Si on arrive ici, une des tâches s'est terminée normalement (ce qui ne devrait pas arriver)
+        print("One of the servers terminated unexpectedly.")
+        for task in pending:
+            task.cancel()
         
     except asyncio.CancelledError:
         # Gestion propre de l'arrêt du serveur

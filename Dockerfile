@@ -1,67 +1,48 @@
-# ========== Étape de construction ==========
-FROM python:3.12-slim as builder
+# Dockerfile optimisé pour le service mcp-crawl4ai-rag
 
+# Étape 1: Builder avec Poetry
+FROM python:3.11-slim as builder
+
+# Variables d'environnement pour Poetry
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_VIRTUALENVS_CREATE=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Installation de Poetry
+RUN pip install poetry
+
+# Création du répertoire de travail
 WORKDIR /app
 
-# Installer les dépendances système nécessaires
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    python3-dev \
-    git \
-    cmake \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - \
-    && chmod +x ${POETRY_HOME}/bin/poetry
-
-# Set working directory
-WORKDIR /app
-
-# Copy only requirements first to leverage Docker cache
+# Copie des fichiers de dépendances
 COPY pyproject.toml poetry.lock* ./
 
-# Install Python dependencies
-RUN ${POETRY_HOME}/bin/poetry install --no-root --only main
+# Installation des dépendances via Poetry
+# --no-root pour ne pas installer le projet lui-même
+RUN poetry install --no-root
 
-# Development stage
-FROM base as development
-ENV ENVIRONMENT=development
-RUN ${POETRY_HOME}/bin/poetry install --no-root
-CMD ["${POETRY_HOME}/bin/poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+# Installation des outils de débogage
 
-# Production stage
-FROM base as production
-ENV ENVIRONMENT=production
 
-# Copy the rest of the application
+# Étape 2: Image finale
+FROM python:3.11-slim
+
+# Variables d'environnement
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH" \
+    CRAWL4_AI_BASE_DIRECTORY=/app/data
+
+WORKDIR /app
+
+# Copie de l'environnement virtuel depuis le builder
+COPY --from=builder /app/.venv .venv
+
+# Copie du code source de l'application
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/logs
+# Assurer que le script de démarrage est exécutable
+RUN chmod +x /app/start-mcp-service.sh
 
-# Set environment variables
-ENV PYTHONPATH=/app \
-    PORT=8002 \
-    HOST=0.0.0.0 \
-    LOG_LEVEL=info \
-    # Performance optimizations
-    PYTHONPATH=/app \
-    SUPABASE_TIMEOUT=30 \
-    MAX_RETRIES=3 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONHASHSEED=random \
-    PYTHONFAULTHANDLER=1 \
-    DISABLE_GPU=1 \
-    TF_CPP_MIN_LOG_LEVEL=2 \
-    TF_ENABLE_ONEDNN_OPTS=0 \
-    TORCH_USE_CUDA=0 \
-    PYTORCH_CUDA_ALLOC_CONF=0
-
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-USER 1000:1000
-CMD ["uvicorn", "src.mcp_crawl4ai_rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Point d'entrée
+CMD ["/app/start-mcp-service.sh"]
