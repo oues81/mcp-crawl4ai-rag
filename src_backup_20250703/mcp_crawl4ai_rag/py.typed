@@ -1,0 +1,2 @@
+# Indique que ce package prend en charge les types statiques
+# Ce fichier vide indique à mypy et autres vérificateurs de types que ce package est typé statiquement.

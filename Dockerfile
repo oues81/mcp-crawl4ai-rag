@@ -1,54 +1,67 @@
-# ===========================================
-# Étape finale - Construction de l'image finale
-# ===========================================
-FROM python:3.11-slim as final
+# ========== Étape de construction ==========
+FROM python:3.12-slim as builder
 
-# Création d'un utilisateur non-root pour la sécurité
-RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /sbin/nologin -c "Docker image user" appuser
+WORKDIR /app
 
-# Définition des variables d'environnement
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    PATH="/app/.venv/bin:$PATH" \
-    PYTHONFAULTHANDLER=1 \
-    PYTHONPATH=/app \
-    # Configuration des chemins
-    CRAWL4_AI_BASE_DIRECTORY=/app/data
-
-# Installation des dépendances système minimales
+# Installer les dépendances système nécessaires
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 libopenblas-dev gfortran curl dnsutils netcat-openbsd \
-    git build-essential pkg-config \
+    build-essential \
+    gcc \
+    python3-dev \
+    git \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
-# Installation des dépendances Python
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - \
+    && chmod +x ${POETRY_HOME}/bin/poetry
+
+# Set working directory
 WORKDIR /app
-COPY requirements.txt .
 
-# Installation des dépendances
-RUN pip install --no-cache-dir setuptools==70.0.0 wheel==0.43.0 && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy only requirements first to leverage Docker cache
+COPY pyproject.toml poetry.lock* ./
 
-# Copie des sources
-COPY src/ src/
-COPY pyproject.toml .
+# Install Python dependencies
+RUN ${POETRY_HOME}/bin/poetry install --no-root --only main
 
-# Exposition du port utilisé par l'application
-EXPOSE 8051
+# Development stage
+FROM base as development
+ENV ENVIRONMENT=development
+RUN ${POETRY_HOME}/bin/poetry install --no-root
+CMD ["${POETRY_HOME}/bin/poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
 
-# Définition de l'utilisateur non-root
-USER appuser
+# Production stage
+FROM base as production
+ENV ENVIRONMENT=production
 
-# Configuration pour forcer l'utilisation du CPU
-ENV DISABLE_GPU=1 \
+# Copy the rest of the application
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs
+
+# Set environment variables
+ENV PYTHONPATH=/app \
+    PORT=8002 \
+    HOST=0.0.0.0 \
+    LOG_LEVEL=info \
+    # Performance optimizations
+    PYTHONPATH=/app \
+    SUPABASE_TIMEOUT=30 \
+    MAX_RETRIES=3 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=random \
+    PYTHONFAULTHANDLER=1 \
+    DISABLE_GPU=1 \
     TF_CPP_MIN_LOG_LEVEL=2 \
     TF_ENABLE_ONEDNN_OPTS=0 \
     TORCH_USE_CUDA=0 \
     PYTORCH_CUDA_ALLOC_CONF=0
 
-# Commande de démarrage du serveur MCP
-CMD ["python", "src/crawl4ai_mcp.py"]
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+USER 1000:1000
+CMD ["uvicorn", "src.mcp_crawl4ai_rag.main:app", "--host", "0.0.0.0", "--port", "8000"]

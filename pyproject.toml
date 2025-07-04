@@ -1,93 +1,138 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
 
-[project]
+[tool.poetry]
 name = "mcp-crawl4ai-rag"
 version = "0.1.0"
 description = "MCP Crawl4AI RAG Service"
-authors = [
-    {name = "Windsurf Cascade", email = "support@windsurf.ai"}
-]
-requires-python = ">=3.12"
+authors = ["Windsurf Cascade <support@windsurf.ai>"]
+license = "MIT"
 readme = "README.md"
-license = {text = "MIT"}
+packages = [
+    {include = "src"}
+]
+
+# Configuration minimale de Python requise
+[tool.poetry.dependencies]
+python = "^3.11"
 
 # Dépendances principales
-dependencies = [
-    # Gestion des packages
-    "setuptools>=70.0.0,<72.0.0",  # Nécessaire pour pkg_resources
-    
-    # Framework web
-    "fastapi>=0.115.0,<1.0.0",
-    "uvicorn[standard]>=0.27.0,<1.0.0",
-    "python-multipart>=0.0.9,<1.0.0",
-    
-    # Gestion de la configuration
-    "python-dotenv>=1.1.0,<2.0.0",
-    "pydantic>=2.7.0,<3.0.0",
-    "pydantic-settings>=2.7.0,<3.0.0",
-    
-    # MCP et RAG
-    "fastmcp>=2.8.0,<3.0.0",
-    "crawl4ai>=0.6.0,<1.0.0",
-    
-    # NLP (CPU uniquement)
-    "torch>=2.2.0,<3.0.0",
-    "transformers>=4.40.0,<5.0.0",
-    
-    # Base de données vectorielle (version CPU uniquement)
-    "faiss-cpu>=1.7.4,<2.0.0",
-    "sentence-transformers>=2.7.0,<3.0.0",
-    
-    # Traitement des données
-    "numpy>=1.26.0,<2.0.0",
-    "pandas>=2.1.0,<3.0.0",
-    "scikit-learn>=1.4.0,<2.0.0",
-    "scipy>=1.12.0,<2.0.0",
-    "tqdm>=4.66.0,<5.0.0",
-    
-    # Requêtes HTTP
-    "httpx[http2]>=0.26.0,<1.0.0",
-    
-    # Base de données
-    "supabase>=2.3.4,<3.0.0",
-    "psycopg2-binary>=2.9.9,<3.0.0",
-    "neo4j>=5.0.0,<6.0.0",  # Driver pour la base de données Neo4j
-    
-    # Utilitaires
-    "loguru>=0.7.2,<1.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=5.3.0,<6.0.0"
-]
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+python-multipart = "^0.0.9"
+python-dotenv = "^1.0.0"
+pydantic = "^2.7.0"
+pydantic-settings = "^2.7.0"
+fastmcp = "^2.9.2"
+crawl4ai = "^0.6.0"
+
+# Traitement du langage naturel
+torch = {version = "^2.2.0", markers = "sys_platform != 'win32'"}  # Version CPU par défaut
+transformers = "^4.40.0"
+faiss-cpu = "^1.7.4"
+sentence-transformers = "^2.7.0"
+
+# Traitement des données
+numpy = "^1.26.0"
+pandas = "^2.1.0"
+scikit-learn = "^1.4.0"
+scipy = "^1.12.0"
+tqdm = "^4.66.0"
+
+# Connexions et requêtes
+httpx = {extras = ["http2"], version = ">=0.27.2"}
+supabase = "^2.3.4"
+psycopg2-binary = "^2.9.9"
+neo4j = "^5.0.0"
+
+# Utilitaires
+loguru = "^0.7.2"
+beautifulsoup4 = "^4.12.0"
+lxml = "^5.3.0"
 
 # Dépendances optionnelles
-[project.optional-dependencies]
-pdf = ["pypdf>=3.17.0,<4.0.0"]
-docx = ["python-docx>=1.0.0,<2.0.0"]
-unstructured = ["unstructured>=0.12.0,<1.0.0"]
+[tool.poetry.group.optional.dependencies]
+pypdf = {version = "^3.17.0", optional = true}
+python-docx = {version = "^1.0.0", optional = true}
+unstructured = {version = "0.11.2", optional = true}  # Version spécifique compatible avec Python 3.11
 
-# Configuration de la qualité du code
+# Dépendances de développement
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+mypy = "^1.8.0"
+ruff = "^0.3.0"
+
+# Configuration des outils de qualité de code
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "B", "C4", "SIM"]
+ignore = ["E501"]  # La longueur de ligne est gérée par black
 
 [tool.ruff.mccabe]
 max-complexity = 10
 
-# Configuration du formatage
+[tool.ruff.isort]
+known-first-party = ["src"]
+
+# Configuration de black
 [tool.black]
 line-length = 88
-target-version = ['py312']
-include = '\\.pyi?$'
+target-version = ["py312"]
+include = '\.pyi?$'
 
-# Configuration de setuptools
-[tool.setuptools]
-package-dir = { "" = "src" }
+# Configuration de mypy
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+disallow_incomplete_defs = true
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["*"]
+# Configuration de pytest
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-v --cov=src --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+# Configuration de la documentation
+[tool.towncrier]
+package = "mcp_crawl4ai_rag"
+filename = "CHANGELOG.md"
+directory = "changelog.d/"
+title_format = "## {version} ({project_date})"
+underlines = ["", "", ""]
+template = "changelog_template.md"
+issue_format = "`#{issue} <https://github.com/yourorg/mcp-crawl4ai-rag/issues/{issue}>`__"
+
+[tool.poetry.scripts]
+mcp-crawl4ai-rag = "crawl4ai_mcp:main"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Nouvelles fonctionnalités"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Corrections de bugs"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Documentation"
+showcontent = false
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Divers"
+showcontent = false
 
 

@@ -1,172 +1,53 @@
-# syntax=docker/dockerfile:1.4
-
-# Utilisation d'une image de base légère avec Python 3.12
-FROM python:3.12-slim as builder
-
-# Définition des variables d'environnement
-ENV \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONFAULTHANDLER=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_DEFAULT_TIMEOUT=100 \
-    POETRY_VERSION=1.8.2
+# ===========================================
+# Étape de construction - Installation des dépendances
+# ===========================================
+FROM python:3.11-alpine as builder
 
 # Installation des dépendances système requises
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Dépendances pour la compilation Python
-    build-essential \
-    # Dépendances pour Playwright
-    libglib2.0-0 \
-    libnss3 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libxkbcommon0 \
-    # Dépendances pour python-magic
-    libmagic1 \
-    # Utilitaires
-    curl \
-    unzip \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache gcc musl-dev linux-headers
 
 # Installation de Poetry
-RUN pip install --no-cache-dir poetry==$POETRY_VERSION
+RUN pip install poetry==1.8.2
 
-# Configuration de Poetry pour ne pas créer d'environnement virtuel
-RUN poetry config virtualenvs.create false
+# Configuration du répertoire de travail
+WORKDIR /app
+COPY . .
 
-# Définition du répertoire de travail
+# Installer les dépendances
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi
+
+# ===========================================
+# Étape d'exécution finale
+# ===========================================
+FROM python:3.11-alpine
+
+# Copier les dépendances installées
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /app /app
+
+# Définir les variables d'environnement
+ENV CRAWL4_AI_BASE_DIRECTORY=/app/data
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PYTHONFAULTHANDLER=1 \
+    PATH="/app/.local/bin:$PATH" \
+    DISABLE_GPU=1 \
+    TF_CPP_MIN_LOG_LEVEL=2 \
+    TF_ENABLE_ONEDNN_OPTS=0 \
+    TORCH_USE_CUDA=0 \
+    PYTORCH_CUDA_ALLOC_CONF=0
+
 WORKDIR /app
 
-# Copie des fichiers de dépendances
-COPY ./docker/services/mcp-crawl4ai-rag/pyproject.toml ./docker/services/mcp-crawl4ai-rag/poetry.lock* ./
+# Exposer le port
+EXPOSE 8000
 
-# Création des répertoires nécessaires
-RUN mkdir -p /app/src/knowledge_graphs /app/data /app/logs
-
-# Copie du code source
-COPY ./docker/services/mcp-crawl4ai-rag/src/__init__.py /app/src/
-COPY ./docker/services/mcp-crawl4ai-rag/src/main.py /app/src/
-COPY ./docker/services/mcp-crawl4ai-rag/src/crawl4ai_mcp.py /app/src/
-COPY ./docker/services/mcp-crawl4ai-rag/src/startup.sh /app/src/
-COPY ./docker/services/mcp-crawl4ai-rag/src/knowledge_graphs/ /app/src/knowledge_graphs/
-
-# Installation des dépendances Python avec Poetry
-RUN poetry install --no-interaction --no-ansi --no-root
-
-# Installation des dépendances supplémentaires
-RUN pip install --no-cache-dir \
-    playwright==1.39.0 \
-    python-magic-bin==0.4.14 \
-    && python -m playwright install --with-deps chromium
-
-# Installation des dépendances manquantes pour crawl4ai
-RUN pip install --no-cache-dir \
-    aiohttp \
-    aiofiles \
-    nest_asyncio \
-    lxml \
-    markdownify \
-    python-dotenv
-
-
-
-# Étape de construction finale
-FROM python:3.12-slim
-
-# Définition des variables d'environnement
-ENV \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONFAULTHANDLER=1 \
-    PYTHONPATH=/app \
-    PORT=8002 \
-    CRAWL4_AI_BASE_DIRECTORY=/data \
-    PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
-
-# Installation des dépendances système minimales
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Dépendances pour Playwright
-    libglib2.0-0 \
-    libnss3 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libxkbcommon0 \
-    # Utilitaires
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Création de l'utilisateur non-root
-RUN useradd -m appuser && \
-    mkdir -p /app /data /logs && \
-    chown -R appuser:appuser /app /data /logs
-
-# Copie des fichiers de l'application et des dépendances
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin/* /usr/local/bin/
-
-# Création des répertoires nécessaires
-RUN mkdir -p /app/src/knowledge_graphs /app/data /app/logs
-
-# Copie du code source
-COPY --from=builder /app/src/__init__.py /app/src/
-COPY --from=builder /app/src/main.py /app/src/
-COPY --from=builder /app/src/crawl4ai_mcp.py /app/src/
-COPY --from=builder /app/src/startup.sh /app/src/
-COPY --from=builder /app/src/knowledge_graphs/ /app/src/knowledge_graphs/
-
-# Configuration des permissions
-RUN chown -R appuser:appuser /app /data /logs
-
-# Commutation vers l'utilisateur non-root
+# Définir l'utilisateur non-root
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /sbin/nologin -c "Docker image user" appuser
 USER appuser
 
-# Définition du répertoire de travail
-WORKDIR /app
-
-# Exposition du port
-EXPOSE ${PORT}
-
-# Rendre le script de démarrage exécutable
-RUN chmod +x /app/src/startup.sh
-
-# Commande de démarrage
-CMD ["/app/src/startup.sh"]
+# Commande corrigée pour démarrer le service
+CMD ["uvicorn", "src.crawl4ai_mcp:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  mcp-crawl4ai-rag:
+    # En développement, on monte le code source en volume pour le rechargement à chaud
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - mcp-cache:/app/.cache
+    
+    # Configuration spécifique au développement
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - LOG_LEVEL=DEBUG
+      - PYTHONFAULTHANDLER=1
+    
+    # Commande de démarrage avec rechargement automatique
+    command: ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8051", "--reload"]
+    
+    # Ports exposés
+    ports:
+      - "8051:8051"  # Port principal de l'API
+      - "8052:8052"  # Port pour le serveur de santé
+    
+    # Configuration pour le développement
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    
+    # Redémarrage automatique en cas d'échec
+    restart: unless-stopped
+
+# Volumes pour le développement
+volumes:
+  mcp-cache:
+    name: mcp-crawl4ai-dev-cache

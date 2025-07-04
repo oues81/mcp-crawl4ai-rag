@@ -14,19 +14,26 @@ x-env: &default-env
   PORT: 8051
   
   # Clés API (requises)
-  OPENAI_API_KEY: ${OPENAI_API_KEY:?"OPENAI_API_KEY doit être défini"}
   SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}
-  SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?"SUPABASE_SERVICE_KEY doit être défini"}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?"SUPABASE_SERVICE_ROLE_KEY doit être défini"}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?"SUPABASE_ANON_KEY doit être défini"}
   
   # Configuration du modèle (optimisé pour CPU)
   MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
   
   # Désactiver les fonctionnalités gourmandes en GPU
-  USE_CONTEXTUAL_EMBEDDINGS: false
-  USE_HYBRID_SEARCH: false
-  USE_AGENTIC_RAG: false
-  USE_RERANKING: false
-  USE_KNOWLEDGE_GRAPH: false
+  USE_CONTEXTUAL_EMBEDDINGS: ${USE_CONTEXTUAL_EMBEDDINGS:-false}
+  USE_HYBRID_SEARCH: ${USE_HYBRID_SEARCH:-false}
+  USE_AGENTIC_RAG: ${USE_AGENTIC_RAG:-false}
+  USE_RERANKING: ${USE_RERANKING:-false}
+  USE_KNOWLEDGE_GRAPH: ${USE_KNOWLEDGE_GRAPH:-false}
+  
+  # Désactiver CUDA et forcer l'utilisation du CPU
+  CUDA_VISIBLE_DEVICES: -1
+  TF_CPP_MIN_LOG_LEVEL: 2
+  TF_ENABLE_ONEDNN_OPTS: 0
+  TORCH_USE_CUDA: 0
+  PYTORCH_CUDA_ALLOC_CONF: 0
   
   # Optimisations Python
   PYTHONUNBUFFERED: 1
@@ -44,7 +51,6 @@ x-env: &default-env
   
   # Configuration des répertoires de cache
   CACHE_DIR: /app/.cache
-  PIP_CACHE_DIR: /app/.cache/pip
   XDG_CACHE_HOME: /app/.cache
   
   # Configuration pour éviter les téléchargements inutiles
@@ -55,7 +61,7 @@ x-env: &default-env
   TORCH_HOME: /app/.cache/torch
   
   # Configuration du logging
-  LOG_LEVEL: INFO
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
   
   # Configuration du service
   API_HOST: ${API_HOST:-0.0.0.0}
@@ -68,19 +74,30 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - PORT=8051
+        - PYTHONUNBUFFERED=1
+        - PYTHONPATH=/app
     
     ports:
       - "${API_PORT:-8051}:8051"
+      - 8051:8051
+    
+    working_dir: /app
     
     environment:
       <<: *default-env
     
-    # Volumes pour la persistance et le cache
+    # Volumes en bind mount pour le développement
     volumes:
-      - mcp-crawl4ai-data:/app/data
-      - mcp-crawl4ai-logs:/app/logs
-      - mcp-cache:/root/.cache
+      # Code source (montage en lecture seule pour éviter d'écraser les fichiers essentiels)
+      - ./src:/app/src:ro
+      # Données persistantes
+      - ./data:/app/data
+      # Logs
+      - ./logs:/app/logs
+      # Cache local
+      - ./.cache:/app/.cache
+      # Fichiers temporaires
+      - /tmp:/tmp
     
     # Configuration des ressources (optimisées pour CPU)
     deploy:
@@ -91,11 +108,11 @@ services:
     
     # Configuration de la santé
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8051/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8052/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     
     # Redémarrage automatique sauf arrêt manuel
     restart: unless-stopped
@@ -104,20 +121,7 @@ services:
     networks:
       - mcp-network
     
-    # Commande de démarrage personnalisée
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8051", "--proxy-headers"]
+    # Mode de démarrage
+    command: ["/app/start-mcp-service.sh"]
 
-# Définition des volumes persistants
-volumes:
-  # Volume pour les données persistantes
-  mcp-crawl4ai-data:
-    name: mcp-crawl4ai-data
-    driver: local
-  # Volume pour les logs
-  mcp-crawl4ai-logs:
-    name: mcp-crawl4ai-logs
-    driver: local
-  # Volume pour le cache
-  mcp-cache:
-    name: mcp-crawl4ai-cache
-    driver: local
+# Aucun volume nommé nécessaire, tout est en bind mount

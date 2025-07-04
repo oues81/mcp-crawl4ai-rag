@@ -24,49 +24,20 @@ if os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false").lower() == "true" or os.geten
     else:
         openai.api_key = openai_api_key
 
-def get_supabase_client(max_retries: int = 3, retry_delay: int = 2) -> Client:
+def get_supabase_client() -> Client:
     """
     Get a Supabase client with the URL and key from environment variables.
     
-    Args:
-        max_retries: Maximum number of connection attempts
-        retry_delay: Delay between retries in seconds
-        
     Returns:
         Supabase client instance
-        
-    Raises:
-        ValueError: If required environment variables are missing
-        Exception: If connection fails after all retries
     """
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
     
     if not url or not key:
-        error_msg = "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables"
-        print(f"[ERROR] {error_msg}")
-        raise ValueError(error_msg)
+        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
     
-    last_error = None
-    
-    for attempt in range(1, max_retries + 1):
-        try:
-            print(f"[INFO] Attempting to connect to Supabase (attempt {attempt}/{max_retries})...")
-            client = create_client(url, key)
-            # Test the connection with a simple query
-            client.table('crawled_pages').select("count", count='exact').limit(1).execute()
-            print("[INFO] Successfully connected to Supabase")
-            return client
-        except Exception as e:
-            last_error = e
-            print(f"[WARNING] Failed to connect to Supabase (attempt {attempt}/{max_retries}): {str(e)}")
-            if attempt < max_retries:
-                print(f"[INFO] Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-    
-    error_msg = f"Failed to connect to Supabase after {max_retries} attempts. Last error: {str(last_error)}"
-    print(f"[ERROR] {error_msg}")
-    raise Exception(error_msg)
+    return create_client(url, key)
 
 def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     """

@@ -1,0 +1,115 @@
+# ===========================================
+# MCP Crawl4AI RAG - Simple Dockerfile
+# ===========================================
+
+# Use Python 3.12 slim image as base
+FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV \
+    # Python settings
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONHASHSEED=random \
+    PYTHONPATH=/app \
+    # PIP settings
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Disable GPU
+    DISABLE_GPU=1 \
+    # Optimize PyTorch for CPU
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    MKL_DYNAMIC=FALSE \
+    OMP_DYNAMIC=FALSE \
+    # Application settings
+    PORT=8002 \
+    HOST=0.0.0.0 \
+    CRAWL4_AI_BASE_DIRECTORY=/app/data \
+    # Logging
+    LOG_LEVEL=INFO \
+    # Disable tokenizers parallelism
+    TOKENIZERS_PARALLELISM=false \
+    # Disable CUDA
+    CUDA_VISIBLE_DEVICES=-1 \
+    TF_CPP_MIN_LOG_LEVEL=2 \
+    TF_ENABLE_ONEDNN_OPTS=0 \
+    TORCH_USE_CUDA=0 \
+    PYTORCH_CUDA_ALLOC_CONF=0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    cmake \
+    # Required for headless browser
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libatspi2.0-0 \
+    libxshmfence1 \
+    # Required for uvicorn
+    libssl-dev \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+
+# Install Python dependencies with optimizations for CPU
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch==2.3.1+cpu && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Create a non-root user and switch to it
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Copy application files
+COPY . .
+
+# Copy and make the start script executable
+COPY start-mcp-service.sh /app/
+RUN chmod +x /app/start-mcp-service.sh
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/data /app/logs /app/.cache && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app
+
+# Switch to non-root user
+USER appuser
+
+# Set working directory to src
+WORKDIR /app/src
+
+# Expose the ports the app runs on
+EXPOSE 8002 8080
+
+# Command to run the application
+CMD ["/app/start-mcp-service.sh"]

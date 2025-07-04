@@ -42,12 +42,47 @@ htmlcov/
 .mypy_cache/
 logs/
 *.log
+*.sqlite
+*.sqlite3
 
 # Development
 .tox/
 .nox/
 .coverage.*
 coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+Dockerfile.dev
+docker-compose.override.yml
+
+# Données volumineuses
+*.h5
+*.hdf5
+*.pth
+*.bin
+*.pt
+*.pkl
+*.joblib
+
+# Dossiers volumineux
+notebooks/
+tests/
+scripts/
+
+# Fichiers de configuration locaux
+*.local.yml
+*.local.yaml
+
+# Fichiers temporaires
+tmp/
+temp/
 *.cover
 .hypothesis/
 .vscode/

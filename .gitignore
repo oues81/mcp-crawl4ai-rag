@@ -1,7 +1,69 @@
+# Environment files
 .env
-.venv
-__pycache__
-crawl4ai_mcp.egg-info
-repos
-.claude
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Project specific
+crawl4ai_mcp.egg-info/
+repos/
+.claude/
 test_script_hallucination*
+
+# Logs
+logs/
+*.log
+
+# Local development
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Docker
+Dockerfile.debug
+Dockerfile.optimized
+Dockerfile.minimal
+Dockerfile.*.bak
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

@@ -1,3 +1,4 @@
+
 """
 MCP server for web crawling with Crawl4AI.
 
@@ -25,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import CrossEncoder
 from supabase import Client
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 from fastmcp import FastMCP, Context
 
 # --- Initial Configuration ---
@@ -159,15 +160,8 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
             print("Neo4j credentials not fully provided. Skipping Knowledge Graph features.")
 
     print("Lifespan initialization complete. Yielding context.")
-    
-    # Créer le contexte avec les composants disponibles
-    context = Crawl4AIContext(
-        crawler=crawler,
-        supabase_client=supabase_client,
-        reranking_model=reranking_model,
-        knowledge_validator=knowledge_validator,
-        repo_extractor=repo_extractor
-    )
+    # Créer le contexte
+    context = Crawl4AIContext(crawler, supabase_client, reranking_model, knowledge_validator, repo_extractor)
     
     # Renvoyer un dictionnaire avec les composants du contexte
     # que nous voulons exposer à l'application
@@ -181,20 +175,14 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
     
     try:
         yield app_state
-    except Exception as e:
-        print(f"[ERROR] Error in application: {str(e)}")
-        raise
     finally:
         print("Closing lifespan resources...")
-        try:
-            if hasattr(crawler, '__aexit__'):
-                await crawler.__aexit__(None, None, None)
-            if knowledge_validator and hasattr(knowledge_validator, 'close'):
-                await knowledge_validator.close()
-            if repo_extractor and hasattr(repo_extractor, 'close'):
-                await repo_extractor.close()
-        except Exception as e:
-            print(f"[WARNING] Error during resource cleanup: {str(e)}")
+        if hasattr(crawler, '__aexit__'):
+            await crawler.__aexit__(None, None, None)
+        if knowledge_validator and hasattr(knowledge_validator, 'close'):
+            await knowledge_validator.close()
+        if repo_extractor and hasattr(repo_extractor, 'close'):
+            await repo_extractor.close()
         print("Lifespan resources closed.")
 
 # --- MCP Server Instance ---
@@ -202,158 +190,45 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8051"))
 
-# Afficher les informations de démarrage
-def print_startup_info():
-    """Affiche les informations de démarrage du service."""
-    print("\n" + "="*70)
-    print(f"{' MCP Crawl4AI RAG Service ':.^70}")
-    print("="*70)
-    print(f"Host: {HOST}")
-    print(f"Port: {PORT}")
-    print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
-    print(f"Python: {sys.version.split()[0]} (running on {sys.platform})")
-    print(f"Working directory: {os.getcwd()}")
-    print("\nEnvironment variables:")
-    print(f"- SUPABASE_URL: {'set' if os.getenv('SUPABASE_URL') else 'not set'}")
-    print(f"- SUPABASE_SERVICE_ROLE_KEY: {'set' if os.getenv('SUPABASE_SERVICE_ROLE_KEY') else 'not set'}")
-    print(f"- SUPABASE_ANON_KEY: {'set' if os.getenv('SUPABASE_ANON_KEY') else 'not set'}")
-    print(f"- NEO4J_URI: {'set' if os.getenv('NEO4J_URI') else 'not set'}")
-    print(f"- NEO4J_USER: {'set' if os.getenv('NEO4J_USER') else 'not set'}")
-    print(f"- NEO4J_PASSWORD: {'set' if os.getenv('NEO4J_PASSWORD') else 'not set'}")
-    print("="*70 + "\n")
-
-# Afficher les informations de démarrage
-print_startup_info()
-
 # Initialiser FastMCP avec la configuration minimale
-try:
-    print("[INIT] Initializing FastMCP server...")
-    mcp = FastMCP(
-        name="mcp-crawl4ai-rag",
-        lifespan=crawl4ai_lifespan
-    )
-    print("[INIT] FastMCP server initialized successfully")
-except Exception as e:
-    print(f"[ERROR] Failed to initialize FastMCP server: {str(e)}")
-    raise
+mcp = FastMCP(
+    name="mcp-crawl4ai-rag",
+    lifespan=crawl4ai_lifespan
+)
+
+# Afficher les informations de démarrage
+print(f"\n{'='*50}")
+print(f"Starting MCP Crawl4AI RAG Service")
+print(f"Host: {HOST}")
+print(f"Port: {PORT}")
+print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+print(f"Python: {sys.version}")
+print(f"Current working directory: {os.getcwd()}")
+print(f"Files in current directory: {os.listdir('.')}")
+print(f"{'='*50}\n")
 
 # --- Main Entry Point ---
 async def main():
-    """
-    Point d'entrée principal pour l'exécution en tant que script.
+    """Point d'entrée principal pour l'exécution en tant que script."""
+    # Démarrer le serveur FastMCP avec le transport HTTP
+    print(f"Starting FastMCP server on http://{HOST}:{PORT}")
     
-    Gère l'initialisation du service, la configuration et le démarrage du serveur.
-    """
-    print("\n" + "="*70)
-    print(f"{' MCP CrawL4AI RAG - Initialization ':.^70}")
-    print("="*70)
-    
-    # Vérification des variables d'environnement critiques
-    required_vars = [
-        "SUPABASE_URL",
-        "SUPABASE_SERVICE_KEY",
-        "SUPABASE_ANON_KEY",
-        "SUPABASE_KEY"
-    ]
-    
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    if missing_vars:
-        error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
-        print(f"[ERROR] {error_msg}")
-        raise ValueError(error_msg)
-    
-    # Initialisation du client Supabase avec gestion des erreurs améliorée
-    supabase_client = None
-    try:
-        print("[INIT] Initializing Supabase client...")
-        supabase_client = get_supabase_client(max_retries=3, retry_delay=2)
-        
-        # Tester la connexion avec une requête simple
-        print("[SUPABASE] Testing database connection...")
-        try:
-            result = supabase_client.table('sources').select("*").limit(1).execute()
-            print(f"[SUPABASE] Connection successful. Found {len(result.data)} records in 'sources' table")
-        except Exception as e:
-            print(f"[WARNING] Could not query 'sources' table: {str(e)}")
-            print("[INFO] This might be expected if the table doesn't exist yet")
-            
-    except Exception as e:
-        error_msg = f"Failed to initialize Supabase client: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        print("\nTroubleshooting tips:")
-        print("1. Vérifiez que les variables d'environnement sont correctement définies")
-        print("2. Vérifiez que l'URL de Supabase est accessible depuis le conteneur")
-        print("3. Vérifiez que la clé de service est valide et a les bonnes permissions")
-        print("4. Consultez les logs de Supabase pour plus de détails")
-        raise RuntimeError(error_msg) from e
-    
-    # Configuration du serveur
-    server_config = {
-        "type": "http",
+    # Configurer le serveur HTTP
+    config = {
         "host": HOST,
         "port": PORT,
+        "log_level": "info",
+        "workers": 1,
+        "reload": False
     }
     
-    print(f"\n[CONFIG] Server configuration:")
-    print(f"- Host: {HOST}")
-    print(f"- Port: {PORT}")
-    print(f"- Environment: {os.getenv('ENVIRONMENT', 'development')}")
-    
-    # Démarrer le serveur HTTP de santé
-    try:
-        print("\n[INIT] Starting health check HTTP server...")
-        http_server = await start_http_server()
-        print("[OK] Health check server started successfully")
-    except Exception as e:
-        print(f"[WARNING] Failed to start health check server: {str(e)}")
-        http_server = None
-    
-    # Démarrer le serveur MCP principal
-    server = None
-    try:
-        print(f"\n[INIT] Starting MCP server on http://{HOST}:{PORT}")
-        server = Server(mcp, transport=server_config)
-        
-        # Démarrer le serveur de manière asynchrone
-        server_task = asyncio.create_task(server.serve())
-        
-        print("\n" + "="*70)
-        print(f"{' MCP CrawL4AI RAG Service Started ':.^70}")
-        print("="*70)
-        print(f"Service URL: http://{HOST}:{PORT}")
-        print(f"Health check: http://{HOST}:8080/health")
-        print("="*70 + "\n")
-        
-        # Attendre que le serveur s'arrête
-        await server_task
-        
-    except asyncio.CancelledError:
-        print("\n[INFO] Server shutdown requested...")
-    except Exception as e:
-        print(f"\n[ERROR] Server error: {str(e)}")
-        raise
-    finally:
-        print("\n[SHUTDOWN] Shutting down services...")
-        
-        # Arrêter le serveur HTTP de santé s'il est en cours d'exécution
-        if http_server:
-            try:
-                print("[SHUTDOWN] Stopping health check server...")
-                await http_server.shutdown()
-                print("[OK] Health check server stopped")
-            except Exception as e:
-                print(f"[WARNING] Error stopping health check server: {str(e)}")
-        
-        # Nettoyage des ressources
-        if hasattr(mcp, 'lifespan'):
-            try:
-                print("[SHUTDOWN] Cleaning up resources...")
-                await mcp.lifespan.shutdown()
-                print("[OK] Resources cleaned up")
-            except Exception as e:
-                print(f"[WARNING] Error during resource cleanup: {str(e)}")
-        
-        print("[SHUTDOWN] Service stopped")
+    # Démarrer le serveur
+    await mcp.run_http_async(**config)
+
+# Ce bloc est maintenant dans main.py
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
 
 # --- Tool Functions ---
 @mcp.tool()
@@ -561,7 +436,7 @@ import re
 import concurrent.futures
 import sys
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 
 # Add knowledge_graphs folder to path for importing knowledge graph modules
 knowledge_graphs_path = Path(__file__).resolve().parent.parent / 'knowledge_graphs'
