@@ -95,12 +95,14 @@ async def startup_event() -> None:
     
     # Connexion à Supabase avec timeout
     try:
-        client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_ANON_KEY'))
-        await asyncio.wait_for(
-            client.from_('test').select('*').limit(1).execute(),
-            timeout=30.0
-        )
-        return client
+        client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
+        logger.info("Connexion à Supabase initialisée. Le test de connectivité sur la table 'test' est désactivé.")
+        # La ligne suivante a été commentée car elle provoquait une erreur de démarrage
+        # en raison de l'absence de la table 'test' dans la base de données.
+        # await asyncio.wait_for(
+        #     client.from_('test').select('*').limit(1).execute(),
+        #     timeout=30.0
+        # )
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,

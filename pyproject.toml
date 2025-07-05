@@ -1,29 +1,70 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "mcp-crawl4ai-rag"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "Cascade",email = "cascade@example.com"}
+description = "MCP service for Crawl4AI with RAG capabilities, optimized for CPU."
+authors = [{ name = "Cascade", email = "cascade@windsurf.ai" }]
+requires-python = ">=3.11"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Framework :: FastAPI",
 ]
-readme = "README.md"
-requires-python = "^3.11"
+
 dependencies = [
-    "uvicorn[standard]>=0.27.0",
-    "fastapi>=0.104.0",
-    "httpx>=0.25.0",
-    "python-dotenv>=1.0.0",
-    "sqlalchemy>=2.0.0",
-    "psycopg2-binary>=2.9.9",
-    "pydantic>=2.0.0",
-    "python-multipart>=0.0.6",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "python-multipart>=0.0.6",
-    "python-jose[cryptography]>=3.3.0",
-    "crawl4ai>=0.1.0"
+    # Core FastAPI and server
+    "fastapi",
+    "uvicorn[standard]",
+
+    # MCP client
+    "fastmcp",
+
+    # Database and vector stores
+    "supabase",
+    "qdrant-client>=1.7.0",
+    "psycopg2-binary", # For PostgreSQL
+
+    # Crawling and data processing
+    "crawl4ai",
+    "beautifulsoup4",
+    "lxml",
+
+    # ML and NLP (CPU optimized)
+    "torch",
+    "transformers",
+    "sentence-transformers",
+    "accelerate",
+    "bitsandbytes",
+
+    # Configuration and utilities
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "numpy",
+
+    # Async support
+    "httpx"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy"
+]
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warnings = true
+pretty = true
+show_error_codes = true
+ignore_missing_imports = true
+
