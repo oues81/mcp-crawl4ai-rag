@@ -108,11 +108,11 @@ services:
     
     # Configuration de la santé
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8052/health"]
+      test: ["CMD-SHELL", "nc -z localhost 8052 || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 30s
     
     # Redémarrage automatique sauf arrêt manuel
     restart: unless-stopped
