@@ -1,175 +1,139 @@
-"""
-Module principal de l'application MCP Crawl4AI RAG.
-
-Ce module définit l'application FastAPI et les routes principales du service.
-"""
-
-import asyncio
-import logging
 import os
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+# --- Configuration initiale du chemin ---
+# Ajoute la racine du projet au sys.path pour permettre les imports relatifs
+# Le fichier actuel est dans src/mcp_crawl4ai_rag, donc on remonte de deux niveaux
+project_root_path = Path(__file__).resolve().parents[1]
+if str(project_root_path) not in sys.path:
+    sys.path.insert(0, str(project_root_path))
 
-# Configuration du logging
-logger = logging.getLogger(__name__)
-
-# Création de l'application FastAPI
-app = FastAPI(
-    title="MCP Crawl4AI RAG Service",
-    description="Service MCP pour le crawling web et le RAG (Retrieval-Augmented Generation)",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-)
-
-# Configuration CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # À restreindre en production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Montage des répertoires statiques
-static_dir = Path("/app/data/static")
-static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-
-# Gestionnaire d'erreurs global
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Gestionnaire d'erreurs global pour l'application."""
-    logger.exception(f"Erreur non gérée: {exc}")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Une erreur interne est survenue: {str(exc)}"},
-    )
-
-
-# Route de santé
-@app.get("/health", tags=["santé"])
-async def health_check() -> Dict[str, str]:
-    """Vérifie l'état de santé du service."""
-    return {"status": "ok", "service": "mcp-crawl4ai-rag"}
-
-
-# Route d'accueil
-@app.get("/", tags=["racine"])
-async def root() -> Dict[str, str]:
-    """Route racine de l'API."""
-    return {
-        "message": "Bienvenue sur le service MCP Crawl4AI RAG",
-        "documentation": "/docs",
-        "santé": "/health",
-    }
-
-
-# Fonction de démarrage de l'application
-@app.on_event("startup")
-async def startup_event() -> None:
-    """Actions à effectuer au démarrage de l'application."""
-    logger.info("Démarrage de l'application MCP Crawl4AI RAG...")
-    
-    # Vérifie les dépendances critiques au démarrage
-    import os
-    import asyncio
-    from fastapi import HTTPException
-    from supabase import create_client
-    
-    # Validation des variables d'environnement
-    required_vars = ['SUPABASE_URL', 'SUPABASE_KEY']
-    missing = [var for var in required_vars if not os.getenv(var)]
-    if missing:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Configuration manquante: {', '.join(missing)}"
-        )
-    
-    # Connexion à Supabase avec timeout
-    try:
-        client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
-        logger.info("Connexion à Supabase initialisée. Le test de connectivité sur la table 'test' est désactivé.")
-        # La ligne suivante a été commentée car elle provoquait une erreur de démarrage
-        # en raison de l'absence de la table 'test' dans la base de données.
-        # await asyncio.wait_for(
-        #     client.from_('test').select('*').limit(1).execute(),
-        #     timeout=30.0
-        # )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail="Timeout de connexion à Supabase"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Erreur de connexion à Supabase: {str(e)}"
-        )
-    
-    # Initialisation des composants principaux
-    try:
-        # Initialisation des composants ici
-        logger.info("Initialisation des composants principaux...")
-        
-        # Exemple d'initialisation (à adapter selon les besoins)
-        # from .services.embedding import init_embedding_model
-        # await init_embedding_model()
-        
-        logger.info("Initialisation terminée avec succès.")
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation de l'application : {e}")
-        raise
-
-
-# Fonction d'arrêt de l'application
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Actions à effectuer à l'arrêt de l'application."""
-    logger.info("Arrêt de l'application MCP Crawl4AI RAG...")
-    
-    try:
-        # Nettoyage des ressources ici
-        logger.info("Nettoyage des ressources...")
-        
-        # Exemple de nettoyage (à adapter selon les besoins)
-        # from .services.database import close_database
-        # await close_database()
-        
-        logger.info("Nettoyage terminé avec succès.")
-        
-    except Exception as e:
-        logger.error(f"Erreur lors du nettoyage des ressources : {e}")
-
-
-# Import des routeurs (à décommenter et adapter selon les besoins)
-# from .api import router as api_router
-# app.include_router(api_router, prefix="/api/v1")
-
-
-# Fonction utilitaire pour exécuter l'application en mode développement
-def run_dev() -> None:
-    """Exécute l'application en mode développement avec rechargement automatique."""
+# --- Point d'entrée de l'application ---
+# Importer l'application FastAPI (`app`) depuis le module principal qui contient la logique MCP.
+# C'est cet `app` qui sera servi par Uvicorn.
+try:
+    import sys
+    from pathlib import Path
     import uvicorn
+    from fastapi import FastAPI, APIRouter
+    from fastapi.middleware.cors import CORSMiddleware
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+    import importlib.util
+    import logging
     
-    uvicorn.run(
-        "mcp_crawl4ai_rag.main:app",
-        host="0.0.0.0",
-        port=8051,
-        reload=True,
-        reload_dirs=["src"],
-        log_level="info",
-    )
+    # Configuration du logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+    logger = logging.getLogger("mcp_crawl4ai_rag")
+    
+    # Importer les modules MCP
+    # Le fichier est dans src/mcp_crawl4ai_rag, on cherche crawl4ai_mcp.py dans src/
+    parent_dir = Path(__file__).resolve().parents[1]
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+    
+    # Le chemin correct est donc dans le parent (src)
+    crawl4ai_mcp_path = parent_dir / "crawl4ai_mcp.py"
+    if not crawl4ai_mcp_path.exists():
+        logger.error(f"Le fichier crawl4ai_mcp.py n'existe pas à l'emplacement: {crawl4ai_mcp_path}")
+        raise FileNotFoundError(f"Le fichier crawl4ai_mcp.py n'existe pas à l'emplacement: {crawl4ai_mcp_path}")
+    
+    # Importer le module crawl4ai_mcp
+    spec = importlib.util.spec_from_file_location("crawl4ai_mcp", crawl4ai_mcp_path)
+    crawl4ai_mcp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(crawl4ai_mcp)
+    
+    # Vérifier si l'application FastAPI est déjà définie dans crawl4ai_mcp
+    if hasattr(crawl4ai_mcp, 'app'):
+        # Utiliser l'application existante
+        app = crawl4ai_mcp.app
+        logger.info("Utilisation de l'application FastAPI définie dans crawl4ai_mcp")
+    else:
+        # Créer une nouvelle application FastAPI
+        app = FastAPI(
+            title="MCP Crawl4AI RAG Service",
+            description="Service MCP pour le crawling web et RAG (Retrieval-Augmented Generation)",
+            version="0.1.0"
+        )
+        
+        # Configuration CORS
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        logger.info("Nouvelle application FastAPI créée")
+    
+    # Vérifier si l'objet mcp est défini et a un routeur
+    if hasattr(crawl4ai_mcp, 'mcp') and crawl4ai_mcp.mcp is not None:
+        if hasattr(crawl4ai_mcp.mcp, 'router'):
+            # Vérifier si le routeur n'est pas déjà inclus
+            router_already_included = False
+            for route in app.routes:
+                if getattr(route, "prefix", "") == "/mcp":
+                    router_already_included = True
+                    break
+            
+            if not router_already_included:
+                app.include_router(crawl4ai_mcp.mcp.router, prefix="/mcp")
+                logger.info("Le routeur MCP a été ajouté à l'application FastAPI")
+            else:
+                logger.info("Le routeur MCP est déjà inclus dans l'application FastAPI")
+        else:
+            logger.warning("L'objet mcp existe mais n'a pas d'attribut router")
+    else:
+        logger.warning("L'objet mcp n'est pas défini dans crawl4ai_mcp ou est None")
+        
+    logger.info("Configuration de l'application FastAPI terminée")
+    
+    # Ajouter des routes de base pour la santé et l'information
+    @app.get("/")
+    async def root():
+        return {
+            "service": "MCP Crawl4AI RAG Service",
+            "status": "running",
+            "endpoints": {
+                "health": "/health",
+                "mcp": "/mcp/",
+                "docs": "/docs"
+            }
+        }
+    
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "healthy",
+            "service": "mcp-crawl4ai-rag",
+            "version": "0.1.0",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+except ImportError as e:
+    print(f"\n[ERREUR] Impossible d'importer l'application depuis 'crawl4ai_mcp.py': {e}")
+    print("Assurez-vous que le fichier 'crawl4ai_mcp.py' existe et ne contient pas d'erreurs de syntaxe.")
+    # Créer une fausse application pour éviter que le serveur ne plante complètement
+    from fastapi import FastAPI
+    app = FastAPI()
+    
+    # Définir le message d'erreur comme une variable locale
+    error_msg = str(e)
+    
+    @app.get("/error")
+    def read_error():
+        return {"error": "Failed to load MCP application", "details": error_msg}
+    
+    @app.get("/")
+    def root():
+        return {"error": "Failed to load MCP application", "details": error_msg}
+        
+    @app.get("/health")
+    def health_check():
+        return {"status": "error", "error": error_msg}
 
-
-# Point d'entrée pour l'exécution directe du module
-if __name__ == "__main__":
-    run_dev()
+# Ce fichier sert maintenant uniquement de point d'entrée pour Uvicorn.
+# Toute la logique, y compris les routes, les outils et la configuration SSE,
+# est gérée dans `crawl4ai_mcp.py`.

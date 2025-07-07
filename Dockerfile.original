@@ -1,0 +1,77 @@
+# Stage 1: Builder
+# Cette étape installe toutes les dépendances, y compris celles nécessaires à la compilation.
+FROM python:3.11-slim-bullseye as builder
+
+# Définir les variables d'environnement pour l'installation
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100
+
+WORKDIR /app
+
+# Installer les dépendances système nécessaires pour construire les paquets Python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Installer pip-tools pour générer un requirements.txt à partir de pyproject.toml
+RUN pip install pip-tools
+
+# Copier uniquement les fichiers nécessaires à l'installation des dépendances
+COPY pyproject.toml ./
+COPY src ./src
+
+# Générer requirements.txt et l'installer dans un virtualenv
+# Cela permet de séparer les dépendances de l'application du système global
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Forcer l'installation de la version CPU de PyTorch pour réduire la taille de l'image
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Installer le reste des dépendances. pip ignorera torch car il est déjà installé.
+RUN pip install --no-cache-dir -e .
+
+# --- Stage 2: Final Image ---
+# Cette étape crée l'image finale légère avec uniquement le code et les dépendances d'exécution.
+FROM python:3.11-slim-bullseye as final
+
+# Définir les variables d'environnement pour l'exécution
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CRAWL4_AI_BASE_DIRECTORY=/app/data \
+    TRANSFORMERS_CACHE=/app/.cache/huggingface \
+    TOKENIZERS_PARALLELISM=true \
+    PORT=${PORT:-8002} \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Installer curl pour le healthcheck
+RUN apt-get update && apt-get install -y curl --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
+# Créer un utilisateur non-root pour des raisons de sécurité
+RUN useradd --create-home --shell /bin/bash appuser
+
+# Copier l'environnement virtuel avec les dépendances installées depuis le stage builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copier le code source de l'application
+COPY --chown=appuser:appuser ./src ./src
+
+# Créer les répertoires nécessaires et définir les permissions
+RUN mkdir -p /app/data /app/logs /app/.cache \
+    && chown -R appuser:appuser /app
+
+# Changer pour l'utilisateur non-root
+USER appuser
+
+# Exposer le port
+EXPOSE 8002
+
+# Activer l'environnement virtuel et définir la commande de démarrage
+# Le point d'entrée est maintenant géré par Uvicorn, qui charge l'application FastAPI
+CMD ["/opt/venv/bin/uvicorn", "src.mcp_crawl4ai_rag.main:app", "--host", "0.0.0.0", "--port", "8002", "--workers", "1"]

@@ -9,14 +9,15 @@ networks:
 # Variables d'environnement communes
 x-env: &default-env
   # Configuration du serveur
-  TRANSPORT: sse
-  HOST: 0.0.0.0
-  PORT: 8002  # Port principal du serveur
+  TRANSPORT: ${TRANSPORT:-sse}
+  HOST: ${HOST:-0.0.0.0}
+  PORT: ${PORT:-8002}  # Port principal du serveur
   
   # Clés API (requises)
-  SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}
-  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?"SUPABASE_SERVICE_ROLE_KEY doit être défini"}
-  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?"SUPABASE_ANON_KEY doit être défini"}
+  SUPABASE_URL: ${SUPABASE_URL}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_KEY}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+  SUPABASE_KEY: ${SUPABASE_KEY}
   
   # Configuration du modèle (optimisé pour CPU)
   MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
@@ -29,11 +30,11 @@ x-env: &default-env
   USE_KNOWLEDGE_GRAPH: ${USE_KNOWLEDGE_GRAPH:-false}
   
   # Désactiver CUDA et forcer l'utilisation du CPU
-  CUDA_VISIBLE_DEVICES: -1
-  TF_CPP_MIN_LOG_LEVEL: 2
-  TF_ENABLE_ONEDNN_OPTS: 0
-  TORCH_USE_CUDA: 0
-  PYTORCH_CUDA_ALLOC_CONF: 0
+  CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:--1}
+  TF_CPP_MIN_LOG_LEVEL: ${TF_CPP_MIN_LOG_LEVEL:-2}
+  TF_ENABLE_ONEDNN_OPTS: ${TF_ENABLE_ONEDNN_OPTS:-0}
+  TORCH_USE_CUDA: ${TORCH_USE_CUDA:-0}
+  PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-0}
   
   # Optimisations Python
   PYTHONUNBUFFERED: 1
@@ -42,34 +43,34 @@ x-env: &default-env
   PYTHONPATH: /app
   
   # Configuration des chemins
-  CRAWL4_AI_BASE_DIRECTORY: /app/data
-  PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+  CRAWL4_AI_BASE_DIRECTORY: ${CRAWL4_AI_BASE_DIRECTORY:-/app/data}
+  PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
   
   # Chemins de l'application
-  APP_DATA_DIR: /app/data
-  LOG_DIR: /app/logs
+  APP_DATA_DIR: ${APP_DATA_DIR:-/app/data}
+  LOG_DIR: ${LOG_DIR:-/app/logs}
   
   # Configuration des répertoires de cache
-  CACHE_DIR: /app/.cache
-  XDG_CACHE_HOME: /app/.cache
+  CACHE_DIR: ${CACHE_DIR:-/app/.cache}
+  XDG_CACHE_HOME: ${XDG_CACHE_HOME:-/app/.cache}
   
   # Configuration pour éviter les téléchargements inutiles
-  TRANSFORMERS_OFFLINE: 1
-  HF_DATASETS_OFFLINE: 1
-  HF_EVALUATE_OFFLINE: 1
-  HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
-  TORCH_HOME: /app/.cache/torch
+  TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+  HF_DATASETS_OFFLINE: ${HF_DATASETS_OFFLINE:-1}
+  HF_EVALUATE_OFFLINE: ${HF_EVALUATE_OFFLINE:-1}
+  HUGGINGFACE_HUB_CACHE: ${HUGGINGFACE_HUB_CACHE:-/app/.cache/huggingface/hub}
+  TORCH_HOME: ${TORCH_HOME:-/app/.cache/torch}
   
   # Configuration du logging
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  
-  # Configuration du service
-  API_HOST: ${API_HOST:-0.0.0.0}
-  API_PORT: ${API_PORT:-8051}
 
 services:
   # Service principal MCP Crawl4AI RAG
   mcp-crawl4ai-rag:
+    # Charger les variables d'environnement depuis le fichier .env.local
+    env_file:
+      - .env.local
+    
     build:
       context: .
       dockerfile: Dockerfile
@@ -78,8 +79,7 @@ services:
         - PYTHONPATH=/app
     
     ports:
-      - "${API_PORT:-8051}:8051"
-      - 8051:8051
+      - "8002:8002"  # Mapper le port 8002 du conteneur vers le port 8002 de l'hôte
     
     working_dir: /app
     
@@ -87,17 +87,14 @@ services:
       <<: *default-env
     
     # Volumes en bind mount pour le développement
+    # Ne montez que les répertoires nécessaires pour éviter de cacher le .venv
     volumes:
-      # Code source (montage en lecture seule pour éviter d'écraser les fichiers essentiels)
-      - ./src:/app/src:ro
       # Données persistantes
       - ./data:/app/data
       # Logs
       - ./logs:/app/logs
-      # Cache local
-      - ./.cache:/app/.cache
-      # Fichiers temporaires
-      - /tmp:/tmp
+      # Script d'entrée pour appliquer les modifications sans rebuild
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
     
     # Configuration des ressources (optimisées pour CPU)
     deploy:
@@ -108,11 +105,11 @@ services:
     
     # Configuration de la santé
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8052 || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     
     # Redémarrage automatique sauf arrêt manuel
     restart: unless-stopped
@@ -122,6 +119,6 @@ services:
       - mcp-network
     
     # Mode de démarrage
-    command: ["/app/start-mcp-service.sh"]
+
 
 # Aucun volume nommé nécessaire, tout est en bind mount

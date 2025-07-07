@@ -1,115 +1,99 @@
 # ===========================================
-# MCP Crawl4AI RAG - Simple Dockerfile
+# MCP Crawl4AI RAG - Dockerfile
+# Version simplifiée et fiable
 # ===========================================
 
-# Use Python 3.12 slim image as base
-FROM python:3.12-slim
+FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /app
+# Définition des arguments de build
+ARG PORT=8002
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables
-ENV \
-    # Python settings
+# Configuration de l'environnement
+ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONFAULTHANDLER=1 \
-    PYTHONHASHSEED=random \
     PYTHONPATH=/app \
-    # PIP settings
+    PYTHONHASHSEED=random \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    # Disable GPU
-    DISABLE_GPU=1 \
-    # Optimize PyTorch for CPU
-    OMP_NUM_THREADS=1 \
-    MKL_NUM_THREADS=1 \
-    OPENBLAS_NUM_THREADS=1 \
-    NUMEXPR_NUM_THREADS=1 \
-    VECLIB_MAXIMUM_THREADS=1 \
-    MKL_DYNAMIC=FALSE \
-    OMP_DYNAMIC=FALSE \
-    # Application settings
-    PORT=8002 \
+    # Désactivation CUDA/GPU
+    CUDA_VISIBLE_DEVICES=-1 \
+    TORCH_USE_CUDA=0 \
+    # Configuration de l'application
+    PORT=${PORT} \
     HOST=0.0.0.0 \
     CRAWL4_AI_BASE_DIRECTORY=/app/data \
-    # Logging
-    LOG_LEVEL=INFO \
-    # Disable tokenizers parallelism
+    TRANSFORMERS_CACHE=/app/.cache/huggingface \
     TOKENIZERS_PARALLELISM=false \
-    # Disable CUDA
-    CUDA_VISIBLE_DEVICES=-1 \
-    TF_CPP_MIN_LOG_LEVEL=2 \
-    TF_ENABLE_ONEDNN_OPTS=0 \
-    TORCH_USE_CUDA=0 \
-    PYTORCH_CUDA_ALLOC_CONF=0
+    LOG_LEVEL=info
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+# Installation des dépendances système
+RUN apt-get update && apt-get install -y \
     curl \
-    git \
-    cmake \
-    # Required for headless browser
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libatspi2.0-0 \
-    libxshmfence1 \
-    # Required for uvicorn
-    libssl-dev \
-    # Clean up
+    python3-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Création des répertoires nécessaires
+RUN mkdir -p /app/data /app/logs /app/.cache/huggingface /app/src
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# Installation des outils de base
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies with optimizations for CPU
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch==2.3.1+cpu && \
-    pip install --no-cache-dir -r requirements.txt
+# Copie du fichier de dépendances
+COPY pyproject.toml ./
 
-# Create a non-root user and switch to it
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Installation des dépendances principales
+RUN pip install --no-cache-dir -e .
 
-# Copy application files
+# Installation des dépendances une par une pour éviter les problèmes de syntaxe
+RUN pip install --no-cache-dir torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir "sentence-transformers>=2.2.2,<2.3.0"
+RUN pip install --no-cache-dir "crawl4ai>=0.6.0,<0.7.0"
+RUN pip install --no-cache-dir "fastmcp>=2.9.0,<3.0.0"
+RUN pip install --no-cache-dir "supabase>=2.0.0,<3.0.0"
+RUN pip install --no-cache-dir "uvicorn[standard]==0.22.0"
+RUN pip install --no-cache-dir "fastapi==0.100.0"
+RUN pip install --no-cache-dir "transformers==4.30.0"
+RUN pip install --no-cache-dir "psycopg2-binary==2.9.0"
+RUN pip install --no-cache-dir "qdrant-client>=1.7.0,<2.0.0"
+RUN pip install --no-cache-dir "pydantic==2.0.0"
+RUN pip install --no-cache-dir "python-dotenv==1.0.0"
+RUN pip install --no-cache-dir "loguru==0.7.0"
+RUN pip install --no-cache-dir "neo4j==5.0.0"
+RUN pip install --no-cache-dir "beautifulsoup4==4.12.0"
+RUN pip install --no-cache-dir "lxml==4.9.0"
+RUN pip install --no-cache-dir "accelerate==0.20.0"
+RUN pip install --no-cache-dir "numpy==1.24.0"
+RUN pip install --no-cache-dir "httpx==0.24.0"
+
+# Copie du code source
 COPY . .
 
-# Copy and make the start script executable
-COPY start-mcp-service.sh /app/
-RUN chmod +x /app/start-mcp-service.sh
+# Création du répertoire pour les modèles
+RUN mkdir -p /app/models
 
-# Create necessary directories and set permissions
-RUN mkdir -p /app/data /app/logs /app/.cache && \
-    chown -R appuser:appuser /app && \
-    chmod -R 755 /app
+# Téléchargement des modèles nécessaires
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/models')"
 
-# Switch to non-root user
+# Configuration des permissions
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /app \
+    && chmod +x /app/start-mcp-service.sh
+
+# Configuration du conteneur
 USER appuser
-
-# Set working directory to src
 WORKDIR /app/src
+EXPOSE ${PORT}
 
-# Expose the ports the app runs on
-EXPOSE 8002 8080
+# Vérification de l'installation des dépendances
+RUN python -c "import uvicorn, fastapi, sentence_transformers, torch; print(f'Versions: uvicorn={uvicorn.__version__}, fastapi={fastapi.__version__}, sentence_transformers={sentence_transformers.__version__}, torch={torch.__version__}, CUDA available={torch.cuda.is_available()}')"
 
-# Command to run the application
+# Commande de démarrage
 CMD ["/app/start-mcp-service.sh"]

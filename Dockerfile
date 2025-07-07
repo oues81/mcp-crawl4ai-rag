@@ -1,48 +1,68 @@
-# Utiliser une image Python 3.11 légère
-FROM python:3.11-slim-bullseye
+# Utiliser une image Python 3.11 slim comme base
+FROM python:3.11-slim
 
 # Définir les variables d'environnement
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=off \
-    CRAWL4_AI_BASE_DIRECTORY=/app/data \
-    TRANSFORMERS_CACHE=/app/.cache/huggingface \
-    TOKENIZERS_PARALLELISM=true \
+    PYTHONPATH=/app \
+    CRAIL4_AI_BASE_DIRECTORY=/app/data \
     PORT=8002 \
-    PYTHONPATH=/app
+    LOG_LEVEL=INFO
 
-WORKDIR /app
-
-# Installer les dépendances système minimales
+# Installer les dépendances système nécessaires
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gosu \
+    libpq-dev \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer uv via pip
-RUN pip install uv
+# Créer et configurer le répertoire de l'application
+WORKDIR /app
 
-# Copier les fichiers du projet
-COPY pyproject.toml . 
-COPY src/ ./src
+# Créer les répertoires nécessaires avec les bonnes permissions
+RUN mkdir -p /app/data /app/logs /app/.cache && \
+    chmod -R 777 /app/logs
 
-# Installer les dépendances du projet dans l'environnement système
-# Utiliser --extra-index-url pour les paquets CPU de torch
-RUN uv pip install --system --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match -r pyproject.toml
+# Copier les fichiers de l'application
+COPY --chown=1000:1000 . .
 
-# Exécuter le script de configuration de crawl4ai
-RUN crawl4ai-setup
+# Installer les dépendances Python
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir neo4j==5.14.1 uvicorn[standard] fastapi
 
-# Créer le répertoire de données pour que les permissions soient correctes
-RUN mkdir -p /app/data
+# Vérifier l'installation des dépendances
+RUN pip list | grep -E 'neo4j|uvicorn|fastapi|crawl4ai|fastmcp'
 
-# Créer un utilisateur non-root pour l'exécution
-RUN useradd --create-home --shell /bin/bash appuser
-RUN chown -R appuser:appuser /app
+# Donner les permissions d'exécution au script d'entrée
+RUN chmod +x /app/docker-entrypoint.sh
 
+# Créer les répertoires nécessaires avec les bonnes permissions
+RUN mkdir -p /app/logs /app/data /app/.cache/huggingface/transformers /app/.cache/torch && \
+    chmod -R 777 /app/logs /app/data /app/.cache
 
-# Exposer le port de l'application
+# Créer un utilisateur non-root pour exécuter l'application
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+# Basculer vers l'utilisateur non-root
+USER appuser
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Définir les variables d'environnement pour les caches
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface/transformers
+ENV TORCH_HOME=/app/.cache/torch
+ENV PYTHONPATH=/app
+ENV CRAWL4_AI_BASE_DIRECTORY=/app/data
+ENV PORT=8002
+
+# Exposer le port
 EXPOSE 8002
 
-# Commande pour démarrer le serveur
-CMD ["uvicorn", "src.mcp_crawl4ai_rag.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# Définir le point d'entrée
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# Commande par défaut
+CMD ["start-service"]

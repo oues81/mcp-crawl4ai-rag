@@ -1,114 +1,134 @@
 version: '3.8'
 
+# Configuration réseau
+networks:
+  mcp-network:
+    driver: bridge
+    name: mcp-crawl4ai-network
+
 # Variables d'environnement communes
 x-env: &default-env
   # Configuration du serveur
-  TRANSPORT: sse
-  HOST: 0.0.0.0
-  PORT: 8002
+  TRANSPORT: ${TRANSPORT:-sse}
+  HOST: ${HOST:-0.0.0.0}
+  PORT: ${PORT:-8002}  # Port principal du serveur
   
   # Clés API (requises)
-  OPENAI_API_KEY: ${OPENAI_API_KEY:?"OPENAI_API_KEY doit être défini"}
-  SUPABASE_URL: ${SUPABASE_URL:?"SUPABASE_URL doit être défini"}
-  SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:?"SUPABASE_SERVICE_KEY doit être défini"}
+  SUPABASE_URL: ${SUPABASE_URL}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_KEY}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+  SUPABASE_KEY: ${SUPABASE_KEY}
   
-  # Configuration du modèle
+  # Configuration du modèle (optimisé pour CPU)
   MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
   
-  # Fonctionnalités optionnelles
+  # Désactiver les fonctionnalités gourmandes en GPU
   USE_CONTEXTUAL_EMBEDDINGS: ${USE_CONTEXTUAL_EMBEDDINGS:-false}
   USE_HYBRID_SEARCH: ${USE_HYBRID_SEARCH:-false}
   USE_AGENTIC_RAG: ${USE_AGENTIC_RAG:-false}
   USE_RERANKING: ${USE_RERANKING:-false}
   USE_KNOWLEDGE_GRAPH: ${USE_KNOWLEDGE_GRAPH:-false}
   
-  # Configuration Neo4j (si USE_KNOWLEDGE_GRAPH=true)
-  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
-  NEO4J_USER: ${NEO4J_USER:-neo4j}
-  NEO4J_PASSWORD: ${NEO4J_PASSWORD:?"NEO4J_PASSWORD doit être défini si USE_KNOWLEDGE_GRAPH=true"}
+  # Désactiver CUDA et forcer l'utilisation du CPU
+  CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:--1}
+  TF_CPP_MIN_LOG_LEVEL: ${TF_CPP_MIN_LOG_LEVEL:-2}
+  TF_ENABLE_ONEDNN_OPTS: ${TF_ENABLE_ONEDNN_OPTS:-0}
+  TORCH_USE_CUDA: ${TORCH_USE_CUDA:-0}
+  PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-0}
   
-  # Optimisations
+  # Optimisations Python
   PYTHONUNBUFFERED: 1
   PYTHONDONTWRITEBYTECODE: 1
   PYTHONFAULTHANDLER: 1
-  CRAWL4_AI_BASE_DIRECTORY: /app/data
+  PYTHONPATH: /app
+  
+  # Configuration des chemins
+  CRAWL4_AI_BASE_DIRECTORY: ${CRAWL4_AI_BASE_DIRECTORY:-/app/data}
+  PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
+  
+  # Chemins de l'application
+  APP_DATA_DIR: ${APP_DATA_DIR:-/app/data}
+  LOG_DIR: ${LOG_DIR:-/app/logs}
+  
+  # Configuration des répertoires de cache
+  CACHE_DIR: ${CACHE_DIR:-/app/.cache}
+  XDG_CACHE_HOME: ${XDG_CACHE_HOME:-/app/.cache}
+  
+  # Configuration pour éviter les téléchargements inutiles
+  TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+  HF_DATASETS_OFFLINE: ${HF_DATASETS_OFFLINE:-1}
+  HF_EVALUATE_OFFLINE: ${HF_EVALUATE_OFFLINE:-1}
+  HUGGINGFACE_HUB_CACHE: ${HUGGINGFACE_HUB_CACHE:-/app/.cache/huggingface/hub}
+  TORCH_HOME: ${TORCH_HOME:-/app/.cache/torch}
+  
+  # Configuration du logging
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 services:
+  # Service principal MCP Crawl4AI RAG
   mcp-crawl4ai-rag:
+    # Charger les variables d'environnement depuis le fichier .env.local
+    env_file:
+      - .env.local
+    
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+      args:
+        - PYTHONUNBUFFERED=1
+        - PYTHONPATH=/app
     
     ports:
-      - "8002:8002"
+      - "8002:8002"  # Mapper le port 8002 du conteneur vers le port 8002 de l'hôte
     
-    # Volumes pour la persistance et le cache
+    working_dir: /app
+    
+    environment:
+      <<: *default-env
+    
+    # Volumes en bind mount pour le développement
+    # Ne montez que les répertoires nécessaires pour éviter de cacher le .venv
     volumes:
-      - pip-cache:/root/.cache/pip  # Cache pour pip
-      - model_cache:/root/.cache  # Cache pour les modèles et autres caches
-      - crawl4ai-data:/app/data  # Données persistantes de l'application
-      - ./logs:/app/logs  # Logs de l'application
+      # Données persistantes
+      - ./data:/app/data
+      # Logs
+      - ./logs:/app/logs
     
-    # Configuration du déploiement
+    # Configuration des ressources (optimisées pour CPU)
     deploy:
       resources:
         limits:
           cpus: '2'
           memory: 4G
     
-    # Redémarrage automatique sauf arrêt manuel
-    restart: unless-stopped
-    
-    environment:
-      <<: *default-env
-      
-      # Configuration des répertoires de cache
-      CACHE_DIR: /app/.cache
-      PIP_CACHE_DIR: /app/.cache/pip
-      XDG_CACHE_HOME: /app/.cache
-      
-      # Configuration pour éviter les téléchargements inutiles
-      TRANSFORMERS_OFFLINE: 1
-      HF_DATASETS_OFFLINE: 1
-      HF_EVALUATE_OFFLINE: 1
-      HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
-      TORCH_HOME: /app/.cache/torch
-      
-      # Configuration de l'application
-      PYTHONUNBUFFERED: 1
-      PYTHONDONTWRITEBYTECODE: 1
-      PYTHONPATH: /app
-      
-      # Configuration de crawl4ai
-      CRAWL4_AI_BASE_DIRECTORY: /app/data
-      
-      # Configuration du logging
-      LOG_LEVEL: INFO
-      
-      # Configuration du service
-      HOST: 0.0.0.0
-      PORT: 8002
-    
     # Configuration de la santé
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     
-    # Commande de démarrage personnalisée
-    command: ["/app/startup.sh"]
+    # Redémarrage automatique sauf arrêt manuel
+    restart: unless-stopped
+    
+    # Configuration réseau
+    networks:
+      - mcp-network
+    
+    # Mode de démarrage
+    command: 
+      - sh
+      - -c
+      - |
+        # Démarrer le serveur Uvicorn
+        echo "Démarrage du serveur Uvicorn..."
+        cd /app && uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload
+        
+        # En cas d'échec, afficher un message d'erreur
+        if [ $? -ne 0 ]; then
+          echo "Erreur lors du démarrage du serveur Uvicorn"
+          exit 1
+        fi
 
-# Définition des volumes persistants
-volumes:
-  pip-cache:
-    name: mcp-crawl4ai-pip-cache  # Nom explicite pour le volume
-    driver: local
-  model_cache:
-    name: mcp-crawl4ai-model-cache  # Nom explicite pour le volume
-    driver: local
-  crawl4ai-data:
-    name: mcp-crawl4ai-data  # Nom explicite pour le volume
-    driver: local
+# Aucun volume nommé nécessaire, tout est en bind mount
