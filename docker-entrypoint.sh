@@ -30,8 +30,12 @@ else
     exit 1
 fi
 
-# Démarrer le serveur FastAPI
-echo -e "\n=== Démarrage du serveur FastAPI ==="
+# Démarrer le serveur de santé en arrière-plan
+echo -e "\n=== Démarrage du serveur de santé ==="
+python -c "import uvicorn; uvicorn.run('health:app', host='0.0.0.0', port=8052, log_level='info')" &
+
+# Démarrer le serveur principal
+echo -e "\n=== Démarrage du serveur principal ==="
 echo "Module: $MAIN_FILE"
 echo "Port: ${PORT}"
 echo "Workers: ${UVICORN_WORKERS}"

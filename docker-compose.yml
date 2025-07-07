@@ -2,9 +2,9 @@ version: '3.8'
 
 # Configuration réseau
 networks:
-  mcp-network:
+  sti_network:
     driver: bridge
-    name: mcp-crawl4ai-network
+    external: true
 
 # Variables d'environnement communes
 x-env: &default-env
@@ -116,9 +116,7 @@ services:
     
     # Configuration réseau
     networks:
-      - mcp-network
-    
-    # Mode de démarrage
+      - sti_network
 
 
 # Aucun volume nommé nécessaire, tout est en bind mount
