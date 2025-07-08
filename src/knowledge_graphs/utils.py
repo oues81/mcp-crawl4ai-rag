@@ -52,19 +52,18 @@ def get_supabase_client(max_retries: int = 3, retry_delay: int = 2) -> Client:
     for attempt in range(1, max_retries + 1):
         try:
             print(f"[INFO] Attempting to connect to Supabase (attempt {attempt}/{max_retries})...")
+            # Just create the client without testing the connection
             client = create_client(url, key)
-            # Test the connection with a simple query
-            client.table('crawled_pages').select("count", count='exact').limit(1).execute()
-            print("[INFO] Successfully connected to Supabase")
+            print("[INFO] Successfully created Supabase client")
             return client
         except Exception as e:
             last_error = e
-            print(f"[WARNING] Failed to connect to Supabase (attempt {attempt}/{max_retries}): {str(e)}")
+            print(f"[WARNING] Failed to create Supabase client (attempt {attempt}/{max_retries}): {str(e)}")
             if attempt < max_retries:
                 print(f"[INFO] Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
     
-    error_msg = f"Failed to connect to Supabase after {max_retries} attempts. Last error: {str(last_error)}"
+    error_msg = f"Failed to create Supabase client after {max_retries} attempts. Last error: {str(last_error)}"
     print(f"[ERROR] {error_msg}")
     raise Exception(error_msg)
 

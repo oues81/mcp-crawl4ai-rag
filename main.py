@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 # Ajouter le répertoire parent au chemin Python
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Importer les routes
+from routes import router as mcp_router
+
 # Créer une application FastAPI
 app = FastAPI(
     title="MCP Crawl4AI RAG",
@@ -25,6 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Inclure les routes MCP
+app.include_router(mcp_router, prefix="")
+
 # Endpoint racine
 @app.get("/")
 async def root():
@@ -33,6 +39,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "health": "/health",
+            "mcp": "/mcp/",
             "sse": "/sse"
         },
         "version": "1.0.0"

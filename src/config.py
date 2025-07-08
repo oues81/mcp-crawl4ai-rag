@@ -64,9 +64,9 @@ class Settings(BaseSettings):
         env="SUPABASE_URL",
         description="URL de votre instance Supabase.",
     )
-    SUPABASE_SERVICE_KEY: str = Field(
+    SUPABASE_SERVICE_ROLE_KEY: str = Field(
         ...,  # Requis
-        env="SUPABASE_SERVICE_KEY",
+        env="SUPABASE_SERVICE_ROLE_KEY",
         description="Clé de service (secret) de votre instance Supabase.",
     )
     
@@ -211,7 +211,7 @@ settings.setup_logging()
 logger.info(f"Configuration chargée pour l'environnement: {settings.ENVIRONMENT}")
 
 # Vérifier les variables requises
-if not all([settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY, settings.OPENAI_API_KEY]):
+if not all([settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY, settings.OPENAI_API_KEY]):
     logger.warning(
         "Certaines variables d'environnement requises sont manquantes. "
         "Assurez-vous de configurer correctement les variables d'environnement."

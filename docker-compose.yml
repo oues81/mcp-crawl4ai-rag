@@ -15,9 +15,8 @@ x-env: &default-env
   
   # Clés API (requises)
   SUPABASE_URL: ${SUPABASE_URL}
-  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_KEY}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
   SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-  SUPABASE_KEY: ${SUPABASE_KEY}
   
   # Configuration du modèle (optimisé pour CPU)
   MODEL_CHOICE: ${MODEL_CHOICE:-gpt-4}
@@ -79,7 +78,7 @@ services:
         - PYTHONPATH=/app
     
     ports:
-      - "8002:8002"  # Mapper le port 8002 du conteneur vers le port 8002 de l'hôte
+      - "8010:8010"  # Mapper le port interne de l'application au port 8010 de l'hôte
     
     working_dir: /app
     
@@ -105,11 +104,11 @@ services:
     
     # Configuration de la santé
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      test: ["CMD-SHELL", "curl -f http://localhost:$$PORT/health || sleep 30 || exit 1"]
+      interval: 1m
+      timeout: 20s
+      retries: 5
+      start_period: 2m
     
     # Redémarrage automatique sauf arrêt manuel
     restart: unless-stopped

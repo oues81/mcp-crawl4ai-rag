@@ -1,0 +1,36 @@
+"""
+Routes pour l'API MCP Crawl4AI RAG.
+"""
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Dict, Any
+
+router = APIRouter()
+
+class MCPRequest(BaseModel):
+    mcp_version: str
+    method: str
+    params: Dict[str, Any]
+
+@router.post("/mcp/")
+async def mcp_endpoint(request: MCPRequest):
+    """
+    Endpoint MCP pour les requêtes de crawling.
+    """
+    if request.method == "search_and_crawl":
+        # Simuler une réponse de succès pour le moment
+        return {
+            "status": "success",
+            "method": request.method,
+            "params": request.params,
+            "results": [
+                {
+                    "url": "https://example.com",
+                    "title": "Example Domain",
+                    "snippet": "This is an example domain for testing.",
+                    "content": "This is an example domain for testing. This domain is for use in illustrative examples in documents."
+                }
+            ]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=f"Méthode non supportée: {request.method}")

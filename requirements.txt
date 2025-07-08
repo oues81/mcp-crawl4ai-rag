@@ -9,8 +9,9 @@ psycopg2-binary
 supabase
 python-jose[cryptography]
 passlib[bcrypt]
-crawl4ai
+crawl4ai>=0.1.0
 fastmcp
+tmcp
 ollama
 beautifulsoup4
 lxml
