@@ -1,3 +1,15 @@
+---
+category: Services
+created: '2025-07-08'
+source: docker/services/mcp-crawl4ai-rag/README.md
+status: draft
+tags:
+- documentation
+title: Mcp-Crawl4Ai-Rag
+updated: '2025-07-08'
+version: 1.0.0
+---
+
 <h1 align="center">Serveur MCP Crawl4AI RAG</h1>
 
 <p align="center">
