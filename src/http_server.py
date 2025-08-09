@@ -534,11 +534,18 @@ async def messages(request: Request):
 
         if method in {"callTool", "tools/call"}:
             try:
-                params = payload.get("params", {})
-                name = params.get("name") or params.get("toolName")
-                arguments = params.get("arguments") or {}
-            except Exception:
-                return err(-32602, "Invalid params for callTool")
+                # Normalize callTool params. 'params' is already parsed above.
+                call_params = params if isinstance(params, dict) else {}
+                name = call_params.get("name") or call_params.get("toolName")
+                arguments = call_params.get("arguments")
+                if arguments is None:
+                    arguments = call_params.get("args")
+                if arguments is None:
+                    arguments = {}
+                if not isinstance(arguments, dict):
+                    return err(-32602, "Invalid params for callTool", "arguments must be an object")
+            except Exception as e:
+                return err(-32602, "Invalid params for callTool", str(e))
             
             if name == "crawl_single_page":
                 try:

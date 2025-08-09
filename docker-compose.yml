@@ -92,6 +92,8 @@ services:
       - ./data:/app/data
       # Logs
       - ./logs:/app/logs
+      # Code source en bind mount pour développement actif
+      - ./src:/app/src
       # Script d'entrée pour appliquer les modifications sans rebuild
       - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
     
