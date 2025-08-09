@@ -67,3 +67,5 @@ Dockerfile.*.bak
 .Trashes
 ehthumbs.db
 Thumbs.db
+# ignore backups, env and logs for public repo
+*.bak*
