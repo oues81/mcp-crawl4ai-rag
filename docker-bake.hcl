@@ -7,8 +7,8 @@ variable "TAG" {
 
 # Cible pour l'image finale de l'application
 target "app" {
-  context = "docker/services/mcp-crawl4ai-rag"
-  dockerfile = "docker/services/mcp-crawl4ai-rag/Dockerfile"
+  context = "./docker/services/mcp-crawl4ai-rag"
+  dockerfile = "Dockerfile"
   tags = ["mcp-crawl4ai-optimized:${TAG}"]
   
   # Paramètres optimisés
@@ -21,8 +21,9 @@ target "app" {
     PYTHONDONTWRITEBYTECODE = "1"
   }
   
-  # Cache des layers
-  cache-from = ["type=registry,ref=ghcr.io/oues81/sti-map-generator/mcp-crawl4ai-rag:buildcache"]
+  # Cache des layers (local only en dev)
+  # cache-from = ["type=local,src=.buildx-cache"]
+  # cache-to   = ["type=local,dest=.buildx-cache,mode=max"]
 }
 
 # Cible par défaut

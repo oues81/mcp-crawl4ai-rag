@@ -11,7 +11,8 @@ python-frontmatter>=1.1.0
 pyyaml>=6.0.1
 
 # Web scraping & APIs (uniquement si utilisés par crawl4ai)
-requests>=2.32.4
+# crawl4ai contraint requests <= 2.32.3, donc on fige à 2.32.3 pour éviter les conflits
+requests==2.32.3
 beautifulsoup4>=4.12.3
 lxml>=4.9.3
 
@@ -21,9 +22,11 @@ psutil>=7.0.0
 
 # Base de données (uniquement si utilisés)
 psycopg2-binary>=2.9.9
+supabase>=2.0.0
 
-# Pour crawl4ai (si nécessaire)
+# Pour crawl4ai et le navigateur
 crawl4ai>=0.1.0
+playwright==1.54.0
+ollama>=0.3.0
 
-# Optimisation de la taille de l'image
---no-binary :all:
+# Ne pas forcer --no-binary; on veut les wheels pour playwright/crawl4ai
